@@ -70,6 +70,10 @@ export function popPid(): void {
   pidStack.pop();
 }
 
+export function clearPidStack(): void {
+  pidStack.length = 0;
+}
+
 export function registerProcess(pid: PID, proc: ProcessState): void {
   processes.set(pid, proc);
 }

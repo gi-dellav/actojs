@@ -2,7 +2,7 @@
 // Web runtime: limited to same-origin BroadcastChannel communication.
 // ponytail: full network-backed distribution via WebSocket when needed.
 
-import type { PID, NodeStartOpts, NodeState, Ref } from './types';
+import type { PID, NodeStartOpts, NodeState, Ref, Module } from './types';
 import * as Proc from './process';
 
 let nodeName: string | null = null;
@@ -19,6 +19,20 @@ interface WireMessage {
   payload: unknown;
 }
 
+interface SpawnPayloadFn {
+  type: 'fn';
+  source: string;
+}
+
+interface SpawnPayloadMFA {
+  type: 'mfa';
+  module: Module;
+  fn: string;
+  args: unknown[];
+}
+
+type SpawnPayload = SpawnPayloadFn | SpawnPayloadMFA;
+
 // ---- start / stop ---------------------------------------------------------
 
 export function start(name: string, opts?: NodeStartOpts): { ok: PID } | { error: Error } {
@@ -30,8 +44,8 @@ export function start(name: string, opts?: NodeStartOpts): { ok: PID } | { error
   // Set up BroadcastChannel for same-origin communication
   try {
     broadcastChannel = new BroadcastChannel(channelNamePrefix + name);
-    broadcastChannel.onmessage = (event: any) => {
-      handleIncoming(event.data as WireMessage);
+    broadcastChannel.onmessage = (event) => {
+      handleIncoming((event as MessageEvent).data as WireMessage);
     };
   } catch {
     // BroadcastChannel not available (e.g., in workers)
@@ -127,15 +141,15 @@ export function monitor(node: string, flag: boolean): void {
 
 export function spawn(
   node: string,
-  fnOrModule: (() => void) | any,
+  fnOrModule: (() => void) | Module,
   fnName?: string,
-  args?: any[],
+  args?: unknown[],
 ): PID {
   if (!broadcastChannel) {
     throw new Error('BroadcastChannel not available');
   }
 
-  let spawnPayload: unknown;
+  let spawnPayload: SpawnPayload;
 
   if (typeof fnOrModule === 'function') {
     // Inline function — serialize it
@@ -148,7 +162,7 @@ export function spawn(
     spawnPayload = {
       type: 'mfa',
       module: fnOrModule,
-      fn: fnName,
+      fn: fnName!,
       args: args ?? [],
     };
   }
@@ -167,9 +181,9 @@ export function spawn(
 
 export function spawn_link(
   node: string,
-  fnOrModule: (() => void) | any,
+  fnOrModule: (() => void) | Module,
   fnName?: string,
-  args?: any[],
+  args?: unknown[],
 ): PID {
   return spawn(node, fnOrModule, fnName, args);
   // ponytail: actual cross-node linking
@@ -177,9 +191,9 @@ export function spawn_link(
 
 export function spawn_monitor(
   node: string,
-  fnOrModule: (() => void) | any,
+  fnOrModule: (() => void) | Module,
   fnName?: string,
-  args?: any[],
+  args?: unknown[],
 ): { pid: PID; ref: Ref } {
   const pid = spawn(node, fnOrModule, fnName, args);
   const ref: Ref = Symbol('monitor');
@@ -199,7 +213,7 @@ function handleIncoming(msg: WireMessage): void {
       break;
     }
     case 'spawn': {
-      const payload = msg.payload as any;
+      const payload = msg.payload as SpawnPayload;
       if (payload.type === 'fn') {
         try {
           const fn = new Function(`return (${payload.source})`)();

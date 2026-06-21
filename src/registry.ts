@@ -1,7 +1,7 @@
 // acto/registry — Local, decentralised key-value process store.
 // Web runtime: cooperative event-loop, built on GenServer.
 
-import type { PID, Ref, RegistryStartOptions, RegistryKeyMode } from './types';
+import type { PID, Ref, RegistryStartOptions, RegistryKeyMode, DownMessage } from './types';
 import * as Proc from './process';
 import * as GS from './gen_server';
 
@@ -60,12 +60,12 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
       },
 
       handle_call(msg: unknown, from: PID, s: RegistryState) {
-        const { type, payload } = msg as any;
+        const { type, payload } = msg as { type: string; payload: unknown };
         const caller = from;
         const keyMode = resolveKeyMode(s.keys);
 
         if (type === 'register') {
-          const { key, value } = payload;
+          const { key, value } = payload as { key: string; value: unknown };
           const partIdx = getPartition(key, s.partitions.size);
           const part = s.partitions.get(partIdx)!;
           let entries = part.get(key) ?? [];
@@ -92,7 +92,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         }
 
         if (type === 'unregister') {
-          const { key } = payload;
+          const { key } = payload as { key: string };
           const partIdx = getPartition(key, s.partitions.size);
           const part = s.partitions.get(partIdx)!;
           let entries = part.get(key) ?? [];
@@ -108,7 +108,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         }
 
         if (type === 'lookup') {
-          const { key } = payload;
+          const { key } = payload as { key: string };
           const partIdx = getPartition(key, s.partitions.size);
           const part = s.partitions.get(partIdx)!;
           const entries = part.get(key) ?? [];
@@ -116,7 +116,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         }
 
         if (type === 'match') {
-          const { key, pattern, guards } = payload;
+          const { key, pattern, guards } = payload as { key: string; pattern: unknown; guards?: (value: unknown) => boolean };
           const partIdx = getPartition(key, s.partitions.size);
           const part = s.partitions.get(partIdx)!;
           const entries = part.get(key) ?? [];
@@ -134,7 +134,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         }
 
         if (type === 'dispatch') {
-          const { key, callback, opts: dispOpts } = payload;
+          const { key, callback, opts: dispOpts } = payload as { key: string; callback: RegistryCallback; opts?: { limit?: number } };
           const partIdx = getPartition(key, s.partitions.size);
           const part = s.partitions.get(partIdx)!;
           const entries = part.get(key) ?? [];
@@ -148,7 +148,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         }
 
         if (type === 'keys') {
-          const { pid } = payload;
+          const { pid } = payload as { pid: PID };
           const result: string[] = [];
           for (const part of s.partitions.values()) {
             for (const [k, entries] of part) {
@@ -161,7 +161,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         }
 
         if (type === 'values') {
-          const { key, pid } = payload;
+          const { key, pid } = payload as { key: string; pid: PID };
           const partIdx = getPartition(key, s.partitions.size);
           const part = s.partitions.get(partIdx)!;
           const entries = part.get(key) ?? [];
@@ -180,7 +180,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         }
 
         if (type === 'update_value') {
-          const { key, fn } = payload;
+          const { key, fn } = payload as { key: string; fn: (value: unknown) => unknown };
           const partIdx = getPartition(key, s.partitions.size);
           const part = s.partitions.get(partIdx)!;
           const entries = part.get(key) ?? [];
@@ -200,8 +200,8 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
 
       handle_info(msg: unknown, s: RegistryState) {
         // Handle EXIT signals from monitored processes
-        if (msg && typeof msg === 'object' && msg !== null && (msg as any).type === 'DOWN') {
-          const { pid: downPid } = msg as any;
+        if (msg && typeof msg === 'object' && msg !== null && (msg as DownMessage).type === 'DOWN') {
+          const { pid: downPid } = msg as DownMessage;
           cleanupPid(s, downPid);
         }
         return { noreply: undefined, state: s };
@@ -256,7 +256,7 @@ export function register(
   key: string,
   value: unknown,
 ): Promise<{ ok: PID } | { error: string }> {
-  return GS.genCall(reg, { type: 'register', payload: { key, value } }) as Promise<any>;
+  return GS.genCall(reg, { type: 'register', payload: { key, value } }) as Promise<{ ok: PID } | { error: string }>;
 }
 
 export function unregister(reg: PID, key: string): Promise<void> {
@@ -267,7 +267,7 @@ export function lookup(
   reg: PID,
   key: string,
 ): Promise<{ pid: PID; value: unknown }[]> {
-  return GS.genCall(reg, { type: 'lookup', payload: { key } }) as Promise<any>;
+  return GS.genCall(reg, { type: 'lookup', payload: { key } }) as Promise<{ pid: PID; value: unknown }[]>;
 }
 
 export function match(
@@ -276,7 +276,7 @@ export function match(
   pattern: unknown,
   guards?: (value: unknown) => boolean,
 ): Promise<{ pid: PID; value: unknown }[]> {
-  return GS.genCall(reg, { type: 'match', payload: { key, pattern, guards } }) as Promise<any>;
+  return GS.genCall(reg, { type: 'match', payload: { key, pattern, guards } }) as Promise<{ pid: PID; value: unknown }[]>;
 }
 
 export function dispatch(
@@ -305,5 +305,5 @@ export function update_value(
   key: string,
   fn: (value: unknown) => unknown,
 ): Promise<{ newValue: unknown; oldValue: unknown } | { error: string }> {
-  return GS.genCall(reg, { type: 'update_value', payload: { key, fn } }) as Promise<any>;
+  return GS.genCall(reg, { type: 'update_value', payload: { key, fn } }) as Promise<{ newValue: unknown; oldValue: unknown } | { error: string }>;
 }

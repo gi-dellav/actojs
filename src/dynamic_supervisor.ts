@@ -5,9 +5,14 @@ import type {
   PID, ChildSpec, ChildInfo, Counts,
   SupervisorStartOptions, SupervisorInitOptions, SupervisorSpec,
   OnStart, OnStartChild,
+  DownMessage,
 } from './types';
 import * as Proc from './process';
 import * as GS from './gen_server';
+
+interface DynamicSupervisorModule {
+  init: (arg?: unknown) => SupervisorSpec;
+}
 
 interface DynamicChildState {
   pid: PID;
@@ -18,7 +23,7 @@ interface DynamicSupervisorState {
   maxChildren: number;
   maxRestarts: number;
   maxSeconds: number;
-  extraArguments: any[];
+  extraArguments: unknown[];
   restartCounters: { time: number; count: number }[];
   isShuttingDown: boolean;
 }
@@ -29,7 +34,7 @@ const DEFAULT_MAX_SECONDS = 5;
 // ---- start_link -----------------------------------------------------------
 
 export async function start_link(
-  optsOrModule?: SupervisorStartOptions | any,
+  optsOrModule?: SupervisorStartOptions | DynamicSupervisorModule,
   initArg?: unknown,
   maybeOpts?: SupervisorStartOptions,
 ): Promise<OnStart> {
@@ -44,7 +49,7 @@ export async function start_link(
         strategy: 'one_for_one',
         max_restarts: spec.max_restarts,
         max_seconds: spec.max_seconds,
-        name: (maybeOpts as any)?.name,
+        name: maybeOpts?.name,
       };
     } else {
       return { error: new Error('module must have an init method') };
@@ -77,14 +82,14 @@ async function startDynamicSupervisor(opts: SupervisorStartOptions): Promise<OnS
       },
 
       async handle_call(msg: unknown, from: PID | null, s: DynamicSupervisorState): Promise<{ reply: unknown; state: DynamicSupervisorState } | { noreply: unknown; state: DynamicSupervisorState }> {
-        const { type, payload } = msg as any;
+        const { type, payload } = msg as { type: string; payload: unknown };
 
         if (type === 'start_child') {
           if (s.children.size >= s.maxChildren) {
             return { reply: { error: new Error('max_children reached') }, state: s };
           }
 
-          const spec: ChildSpec = payload;
+          const spec = payload as ChildSpec;
           // Prepend extra_arguments
           const fullArgs = [...s.extraArguments, ...spec.start[2]];
           const fullSpec: ChildSpec = { ...spec, start: [spec.start[0], spec.start[1], fullArgs] };
@@ -99,7 +104,7 @@ async function startDynamicSupervisor(opts: SupervisorStartOptions): Promise<OnS
 
           let childResult: OnStartChild;
           try {
-            childResult = await module[fnName](...args);
+            childResult = await (module[fnName] as Function)(...args) as OnStartChild;
           } catch (err) {
             childResult = { error: err instanceof Error ? err : new Error(String(err)) };
           }
@@ -133,7 +138,7 @@ async function startDynamicSupervisor(opts: SupervisorStartOptions): Promise<OnS
 
         if (type === 'stop') {
           s.isShuttingDown = true;
-          const { reason } = payload as any;
+          const { reason } = payload as { reason?: unknown };
           for (const [pid, _] of s.children) {
             Proc.exit(pid, reason ?? 'shutdown');
           }
@@ -147,8 +152,8 @@ async function startDynamicSupervisor(opts: SupervisorStartOptions): Promise<OnS
       async handle_info(msg: unknown, s: DynamicSupervisorState): Promise<{ noreply: unknown; state: DynamicSupervisorState }> {
         if (s.isShuttingDown) return { noreply: undefined, state: s };
 
-        if (msg && typeof msg === 'object' && msg !== null && (msg as any).type === 'DOWN') {
-          const { pid: downPid, reason } = msg as any;
+        if (msg && typeof msg === 'object' && msg !== null && (msg as DownMessage).type === 'DOWN') {
+          const { pid: downPid, reason } = msg as DownMessage;
           if (reason === 'normal' || reason === 'shutdown' || reason === 'killed') {
             s.children.delete(downPid);
             return { noreply: undefined, state: s };
@@ -208,7 +213,7 @@ export function terminate_child(
   sup: PID,
   pid: PID,
 ): Promise<void | { error: string }> {
-  return GS.genCall(sup, { type: 'terminate_child', payload: pid }) as Promise<any>;
+  return GS.genCall(sup, { type: 'terminate_child', payload: pid }) as Promise<void | { error: string }>;
 }
 
 export function count_children(sup: PID): Promise<Counts> {

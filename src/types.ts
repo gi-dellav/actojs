@@ -6,6 +6,16 @@ export type Ref = symbol;
 export type Dest = PID | string; // PID or registered name
 export type SpawnOpt = 'link' | 'monitor';
 
+export type Module = Record<string, unknown>;
+export type MFA = [Module, string, unknown[]]; // [module, functionName, args]
+
+export interface DownMessage {
+  type: 'DOWN';
+  ref: Ref;
+  pid: PID;
+  reason: unknown;
+}
+
 export interface ProcessInfo {
   status: 'running' | 'alive' | 'exiting' | 'exited';
   messageQueueLength: number;
@@ -23,7 +33,7 @@ export type Strategy = 'one_for_one' | 'one_for_all' | 'rest_for_one';
 
 export interface ChildSpec {
   id: string;
-  start: [any, string, any[]]; // [module, functionName, args]
+  start: MFA; // [module, functionName, args]
   restart?: 'permanent' | 'transient' | 'temporary';
   shutdown?: number | 'brutal_kill' | 'infinity';
   type?: 'worker' | 'supervisor';
@@ -34,7 +44,7 @@ export interface ChildInfo {
   id: string | undefined;
   pid: PID;
   type: 'worker' | 'supervisor';
-  modules: any[];
+  modules: Module[];
 }
 
 export interface Counts {
@@ -68,7 +78,7 @@ export interface SupervisorStartOptions {
 
 export interface SupervisorInitOptions extends SupervisorStartOptions {
   max_children?: number;
-  extra_arguments?: any[];
+  extra_arguments?: unknown[];
 }
 
 export interface SupervisorSpec {
@@ -77,7 +87,7 @@ export interface SupervisorSpec {
   max_restarts: number;
   max_seconds: number;
   max_children: number;
-  extra_arguments: any[];
+  extra_arguments: unknown[];
 }
 
 export interface NodeStartOpts {

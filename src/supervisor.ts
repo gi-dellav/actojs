@@ -5,9 +5,14 @@ import type {
   PID, ChildSpec, ChildInfo, Counts,
   Strategy, SupervisorStartOptions, SupervisorInitOptions, SupervisorSpec,
   OnStart, OnStartChild,
+  DownMessage, Module,
 } from './types';
 import * as Proc from './process';
 import * as GS from './gen_server';
+
+interface SupervisorModule {
+  init: (arg?: unknown) => SupervisorSpec;
+}
 
 interface ChildState {
   spec: ChildSpec;
@@ -39,7 +44,7 @@ function normalizeSpec(spec: ChildSpec): ChildSpec {
 // ---- start_link (static children) -----------------------------------------
 
 export async function start_link(
-  childrenOrModule: ChildSpec[] | any,
+  childrenOrModule: ChildSpec[] | SupervisorModule,
   initArgOrOpts?: unknown,
   maybeOpts?: SupervisorStartOptions,
 ): Promise<OnStart> {
@@ -115,7 +120,7 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
       },
 
       async handle_call(msg: unknown, from: PID | null, s: SupervisorState): Promise<{ reply: unknown; state: SupervisorState } | { noreply: unknown; state: SupervisorState }> {
-        const { type, payload } = msg as any;
+        const { type, payload } = msg as { type: string; payload: unknown };
 
         if (type === 'count_children') {
           return { reply: countChildren(s), state: s };
@@ -181,7 +186,7 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
 
         if (type === 'stop') {
           s.isShuttingDown = true;
-          const { reason } = payload as any;
+          const { reason } = payload as { reason?: unknown };
           // Terminate all children in reverse order
           const reversed = [...s.childOrder].reverse();
           for (const childId of reversed) {
@@ -202,8 +207,8 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
         if (s.isShuttingDown) return { noreply: undefined, state: s };
 
         // Handle child exit (DOWN message from monitor)
-        if (msg && typeof msg === 'object' && msg !== null && (msg as any).type === 'DOWN') {
-          const { pid: downPid, reason } = msg as any;
+        if (msg && typeof msg === 'object' && msg !== null && (msg as DownMessage).type === 'DOWN') {
+          const { pid: downPid, reason } = msg as DownMessage;
           if (reason === 'normal' || reason === 'shutdown') {
             return { noreply: undefined, state: s };
           }
@@ -271,20 +276,20 @@ export function init(children: ChildSpec[], opts: SupervisorInitOptions = { stra
 // ---- child_spec -----------------------------------------------------------
 
 export function child_spec(
-  moduleOrSpec: any,
+  moduleOrSpec: ChildSpec | Record<string, unknown>,
   overrides?: Partial<ChildSpec>,
 ): ChildSpec {
   if (typeof moduleOrSpec === 'object' && 'id' in moduleOrSpec) {
-    return { ...moduleOrSpec, ...overrides };
+    return { ...(moduleOrSpec as ChildSpec), ...overrides };
   }
   // Module with child_spec method or defaults
-  if (typeof moduleOrSpec?.child_spec === 'function') {
-    return { ...moduleOrSpec.child_spec(), ...overrides };
+  if (typeof (moduleOrSpec as Record<string, unknown>).child_spec === 'function') {
+    return { ...((moduleOrSpec as Record<string, unknown>).child_spec as () => ChildSpec)(), ...overrides };
   }
   // Default: assume [module, functionName, args]
   return {
-    id: moduleOrSpec?.name ?? 'child',
-    start: [moduleOrSpec, 'start_link', []],
+    id: (moduleOrSpec as Record<string, unknown>)?.name as string ?? 'child',
+    start: [moduleOrSpec as Module, 'start_link', []],
     ...overrides,
   };
 }
@@ -307,14 +312,14 @@ export function terminate_child(
   sup: PID,
   childId: string,
 ): Promise<void | { error: string }> {
-  return GS.genCall(sup, { type: 'terminate_child', payload: childId }) as Promise<any>;
+  return GS.genCall(sup, { type: 'terminate_child', payload: childId }) as Promise<void | { error: string }>;
 }
 
 export function delete_child(
   sup: PID,
   childId: string,
 ): Promise<void | { error: string }> {
-  return GS.genCall(sup, { type: 'delete_child', payload: childId }) as Promise<any>;
+  return GS.genCall(sup, { type: 'delete_child', payload: childId }) as Promise<void | { error: string }>;
 }
 
 export function restart_child(sup: PID, childId: string): Promise<OnStartChild> {

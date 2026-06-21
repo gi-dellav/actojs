@@ -6,6 +6,23 @@ import type { PID, Ref } from './types';
 import * as Proc from './process';
 import * as M from './mailbox';
 
+interface GenCallMsg {
+  __gen_server__: 'call';
+  ref: Ref;
+  payload: unknown;
+  replyTo: PID | null;
+}
+
+interface GenCastMsg {
+  __gen_server__: 'cast';
+  payload: unknown;
+}
+
+interface GenStopMsg {
+  __gen_server__: 'stop';
+  reason?: unknown;
+}
+
 export interface GenServerCallbacks<S> {
   init(args: unknown): S | { ok: S } | { error: unknown; reason?: unknown } | Promise<S | { ok: S } | { error: unknown; reason?: unknown }>;
   handle_call?(msg: unknown, from: PID | null, state: S): { reply: unknown; state: S } | { noreply: unknown; state: S } | Promise<{ reply: unknown; state: S } | { noreply: unknown; state: S }>;
@@ -63,7 +80,7 @@ export async function startGenServer<S>(
           const tagged = msg as { __gen_server__?: string; replyTo?: PID; ref?: Ref };
 
           if (tagged.__gen_server__ === 'call' && callbacks.handle_call) {
-            const { replyTo, ref, payload } = msg as any;
+            const { replyTo, ref, payload } = msg as GenCallMsg;
             try {
               const result = await callbacks.handle_call(payload, replyTo, state);
               state = result.state;
@@ -76,7 +93,7 @@ export async function startGenServer<S>(
           }
 
           if (tagged.__gen_server__ === 'cast' && callbacks.handle_cast) {
-            const { payload } = msg as any;
+            const { payload } = msg as GenCastMsg;
             try {
               const result = await callbacks.handle_cast(payload, state);
               if (result) state = result.state;
@@ -85,7 +102,7 @@ export async function startGenServer<S>(
           }
 
           if (tagged.__gen_server__ === 'stop') {
-            const { reason } = msg as any;
+            const { reason } = msg as GenStopMsg;
             try {
               await callbacks.terminate?.(reason, state);
             } catch (_) {}
