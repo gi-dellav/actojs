@@ -1,0 +1,23 @@
+{
+  "name": "actojs",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./process": "./src/process.ts",
+    "./agent": "./src/agent.ts",
+    "./task": "./src/task.ts",
+    "./registry": "./src/registry.ts",
+    "./supervisor": "./src/supervisor.ts",
+    "./dynamic_supervisor": "./src/dynamic_supervisor.ts",
+    "./node": "./src/node.ts",
+    "./core": "./src/core.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
