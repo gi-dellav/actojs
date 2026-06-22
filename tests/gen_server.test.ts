@@ -97,7 +97,7 @@ describe('gen_server', () => {
     test('calls handle_call and gets reply', async () => {
       const result = await GS.startGenServer({
         init() { return { count: 0 }; },
-        handle_call(msg: any, _from, state: any) {
+        handle_call(msg: any, _from: any, state: any, _myPid: any) {
           if (msg.type === 'inc') {
             return { reply: state.count + 1, state: { count: state.count + 1 } };
           }

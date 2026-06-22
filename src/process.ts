@@ -28,8 +28,7 @@ export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[]): PID {
     const callerProc = M.getProcess(caller);
     if (callerProc) {
       proc.monitoredBy.set(caller, [ref]);
-      const existing = callerProc.monitors.get(ref);
-      // Track ref in caller's monitor list — we store the monitored PID
+      callerProc.monitors.set(ref, pid);
     }
   }
 
@@ -44,10 +43,10 @@ export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[]): PID {
       }
     });
 
-    const finish = () => {
+    const finish = (err?: unknown) => {
       if (proc.status === 'running') {
         proc.status = 'exiting';
-        proc.exitReason = proc.exitReason ?? 'normal';
+        proc.exitReason = proc.exitReason ?? err ?? 'normal';
       }
       M.handleExit(proc);
     };
@@ -109,8 +108,8 @@ export function exit(pid: PID, reason: unknown): void {
 
 // ---- link / unlink --------------------------------------------------------
 
-export function link(pid: PID): void {
-  const caller = M.getCurrentPid();
+export function link(pid: PID, callerPid?: PID): void {
+  const caller = callerPid ?? M.getCurrentPid();
   if (!caller) throw new Error('link() called outside of a process');
   const callerProc = M.getProcess(caller);
   const other = M.getProcess(pid);
@@ -131,8 +130,8 @@ export function unlink(pid: PID): void {
 
 // ---- monitor / demonitor --------------------------------------------------
 
-export function monitor(pid: PID): Ref {
-  const caller = M.getCurrentPid();
+export function monitor(pid: PID, callerPid?: PID): Ref {
+  const caller = callerPid ?? M.getCurrentPid();
   if (!caller) throw new Error('monitor() called outside of a process');
   const callerProc = M.getProcess(caller);
   const other = M.getProcess(pid);
@@ -181,8 +180,8 @@ export function flag(flag: string, value: boolean): boolean {
 
 // ---- name registry --------------------------------------------------------
 
-export function register(pid: PID, name: string): void {
-  const caller = M.getCurrentPid();
+export function register(pid: PID, name: string, callerPid?: PID): void {
+  const caller = callerPid ?? M.getCurrentPid();
   if (!caller) throw new Error('register() called outside of a process');
   const proc = M.getProcess(pid);
   if (!proc) throw new Error('process not found');

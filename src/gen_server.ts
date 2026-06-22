@@ -25,9 +25,9 @@ interface GenStopMsg {
 
 export interface GenServerCallbacks<S> {
   init(args: unknown): S | { ok: S } | { error: unknown; reason?: unknown } | Promise<S | { ok: S } | { error: unknown; reason?: unknown }>;
-  handle_call?(msg: unknown, from: PID | null, state: S): { reply: unknown; state: S } | { noreply: unknown; state: S } | Promise<{ reply: unknown; state: S } | { noreply: unknown; state: S }>;
-  handle_cast?(msg: unknown, state: S): { noreply: unknown; state: S } | Promise<{ noreply: unknown; state: S }>;
-  handle_info?(msg: unknown, state: S): { noreply: unknown; state: S } | Promise<{ noreply: unknown; state: S }>;
+  handle_call?(msg: unknown, from: PID | null, state: S, myPid: PID): { reply: unknown; state: S } | { noreply: unknown; state: S } | Promise<{ reply: unknown; state: S } | { noreply: unknown; state: S }>;
+  handle_cast?(msg: unknown, state: S, myPid: PID): { noreply: unknown; state: S } | Promise<{ noreply: unknown; state: S }>;
+  handle_info?(msg: unknown, state: S, myPid: PID): { noreply: unknown; state: S } | Promise<{ noreply: unknown; state: S }>;
   terminate?(reason: unknown, state: S): void | Promise<void>;
 }
 
@@ -82,7 +82,7 @@ export async function startGenServer<S>(
           if (tagged.__gen_server__ === 'call' && callbacks.handle_call) {
             const { replyTo, ref, payload } = msg as GenCallMsg;
             try {
-              const result = await callbacks.handle_call(payload, replyTo, state);
+              const result = await callbacks.handle_call(payload, replyTo, state, me);
               state = result.state;
               const reply = 'reply' in result ? result.reply : undefined;
               resolvePending(ref, { ok: reply });
@@ -95,7 +95,7 @@ export async function startGenServer<S>(
           if (tagged.__gen_server__ === 'cast' && callbacks.handle_cast) {
             const { payload } = msg as GenCastMsg;
             try {
-              const result = await callbacks.handle_cast(payload, state);
+              const result = await callbacks.handle_cast(payload, state, me);
               if (result) state = result.state;
             } catch (_) {}
             continue;
@@ -113,7 +113,7 @@ export async function startGenServer<S>(
 
         if (callbacks.handle_info) {
           try {
-            const result = await callbacks.handle_info(msg, state);
+            const result = await callbacks.handle_info(msg, state, me);
             if (result) state = result.state;
           } catch (_) {}
         }

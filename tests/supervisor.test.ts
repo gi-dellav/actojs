@@ -240,7 +240,7 @@ describe('supervisor', () => {
   });
 
   describe('one_for_one restart strategy', () => {
-    test.skip('restarts only the failed child (ponytail: findOriginalSpec returns null)', async () => {
+    test('restarts only the failed child', async () => {
       const mod = makeWorkerMod();
       const child1 = makeChildSpec('c1', mod);
       const child2 = makeChildSpec('c2', mod);
@@ -266,7 +266,7 @@ describe('supervisor', () => {
   });
 
   describe('one_for_all restart strategy', () => {
-    test.skip('restarts all children when one fails (ponytail: findOriginalSpec returns null)', async () => {
+    test('restarts all children when one fails', async () => {
       const mod = makeWorkerMod();
       const child1 = makeChildSpec('c1', mod);
       const child2 = makeChildSpec('c2', mod);
@@ -292,7 +292,7 @@ describe('supervisor', () => {
   });
 
   describe('rest_for_one restart strategy', () => {
-    test.skip('restarts failed child and all after it (ponytail: findOriginalSpec returns null)', async () => {
+    test('restarts failed child and all after it', async () => {
       const mod = makeWorkerMod();
       const child1 = makeChildSpec('c1', mod);
       const child2 = makeChildSpec('c2', mod);
@@ -321,11 +321,14 @@ describe('supervisor', () => {
   });
 
   describe('restart rate limiting', () => {
-    test.skip('shuts down supervisor when max_restarts exceeded (ponytail: restart not fully implemented)', async () => {
-      // Child that dies immediately, causing rapid restarts
+    test('shuts down supervisor when max_restarts exceeded', async () => {
+      // Child that dies immediately with abnormal reason, causing rapid restarts
       const mod = {
         start_link() {
-          const pid = Process.spawn(() => {});
+          const pid = Process.spawn(async () => {
+            await Process.sleep(0);
+            throw new Error('abnormal');
+          });
           return { ok: pid };
         },
       };

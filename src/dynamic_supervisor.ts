@@ -34,11 +34,11 @@ const DEFAULT_MAX_SECONDS = 5;
 // ---- start_link -----------------------------------------------------------
 
 export async function start_link(
-  optsOrModule?: SupervisorStartOptions | DynamicSupervisorModule,
+  optsOrModule?: SupervisorInitOptions | DynamicSupervisorModule,
   initArg?: unknown,
   maybeOpts?: SupervisorStartOptions,
 ): Promise<OnStart> {
-  let opts: SupervisorStartOptions;
+  let opts: SupervisorInitOptions;
 
   if (optsOrModule && typeof optsOrModule === 'object' && 'init' in optsOrModule) {
     // Module-based start
@@ -49,28 +49,32 @@ export async function start_link(
         strategy: 'one_for_one',
         max_restarts: spec.max_restarts,
         max_seconds: spec.max_seconds,
+        max_children: spec.max_children,
+        extra_arguments: spec.extra_arguments,
         name: maybeOpts?.name,
       };
     } else {
       return { error: new Error('module must have an init method') };
     }
   } else {
-    opts = (optsOrModule as SupervisorStartOptions) ?? { strategy: 'one_for_one' };
+    opts = (optsOrModule as SupervisorInitOptions) ?? { strategy: 'one_for_one' };
   }
 
   return startDynamicSupervisor(opts);
 }
 
-async function startDynamicSupervisor(opts: SupervisorStartOptions): Promise<OnStart> {
+async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnStart> {
   const maxRestarts = opts.max_restarts ?? DEFAULT_MAX_RESTARTS;
   const maxSeconds = opts.max_seconds ?? DEFAULT_MAX_SECONDS;
+  const maxChildren = opts.max_children ?? Infinity;
+  const extraArguments = opts.extra_arguments ?? [];
 
   const initState: DynamicSupervisorState = {
     children: new Map(),
-    maxChildren: Infinity,
+    maxChildren,
     maxRestarts,
     maxSeconds,
-    extraArguments: [],
+    extraArguments,
     restartCounters: [],
     isShuttingDown: false,
   };
@@ -81,7 +85,7 @@ async function startDynamicSupervisor(opts: SupervisorStartOptions): Promise<OnS
         return initState;
       },
 
-      async handle_call(msg: unknown, from: PID | null, s: DynamicSupervisorState): Promise<{ reply: unknown; state: DynamicSupervisorState } | { noreply: unknown; state: DynamicSupervisorState }> {
+      async handle_call(msg: unknown, from: PID | null, s: DynamicSupervisorState, supPid: PID): Promise<{ reply: unknown; state: DynamicSupervisorState } | { noreply: unknown; state: DynamicSupervisorState }> {
         const { type, payload } = msg as { type: string; payload: unknown };
 
         if (type === 'start_child') {
@@ -114,7 +118,7 @@ async function startDynamicSupervisor(opts: SupervisorStartOptions): Promise<OnS
           }
 
           const pid = (childResult as { ok: PID }).ok;
-          Proc.monitor(pid);
+          Proc.monitor(pid, supPid);
           s.children.set(pid, { pid });
           return { reply: childResult, state: s };
         }
@@ -149,7 +153,7 @@ async function startDynamicSupervisor(opts: SupervisorStartOptions): Promise<OnS
         return { reply: undefined, state: s };
       },
 
-      async handle_info(msg: unknown, s: DynamicSupervisorState): Promise<{ noreply: unknown; state: DynamicSupervisorState }> {
+      async handle_info(msg: unknown, s: DynamicSupervisorState, _myPid: PID): Promise<{ noreply: unknown; state: DynamicSupervisorState }> {
         if (s.isShuttingDown) return { noreply: undefined, state: s };
 
         if (msg && typeof msg === 'object' && msg !== null && (msg as DownMessage).type === 'DOWN') {

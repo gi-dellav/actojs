@@ -59,7 +59,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         return initState;
       },
 
-      handle_call(msg: unknown, from: PID, s: RegistryState) {
+      handle_call(msg: unknown, from: PID, s: RegistryState, _myPid: PID) {
         const { type, payload } = msg as { type: string; payload: unknown };
         const caller = from;
         const keyMode = resolveKeyMode(s.keys);
@@ -198,7 +198,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         return { reply: undefined, state: s };
       },
 
-      handle_info(msg: unknown, s: RegistryState) {
+      handle_info(msg: unknown, s: RegistryState, _myPid: PID) {
         // Handle EXIT signals from monitored processes
         if (msg && typeof msg === 'object' && msg !== null && (msg as DownMessage).type === 'DOWN') {
           const { pid: downPid } = msg as DownMessage;

@@ -46,7 +46,7 @@ async function startGen<S>(init: () => S, opts?: { name?: string; link?: boolean
       init(_args: unknown): S {
         return state;
       },
-      handle_call(msg: unknown, _from: PID, s: S) {
+      handle_call(msg: unknown, _from: PID, s: S, _myPid: PID) {
         const { type, payload } = (msg as { type: string; payload: unknown });
         if (type === 'get') {
           const fn = typeof payload === 'function' ? payload as AgentFn<S, unknown> : resolveFn<S, unknown>(payload as AgentArg<S, unknown>);
@@ -65,7 +65,7 @@ async function startGen<S>(init: () => S, opts?: { name?: string; link?: boolean
         }
         return { reply: undefined, state: s };
       },
-      handle_cast(msg: unknown, s: S) {
+      handle_cast(msg: unknown, s: S, _myPid: PID) {
         const { payload } = (msg as { payload: unknown });
         const fn = typeof payload === 'function' ? payload as AgentFn<S, S> : resolveFn<S, S>(payload as AgentArg<S, S>);
         return { noreply: undefined, state: fn(s) };
