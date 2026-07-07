@@ -7,6 +7,7 @@ import type {
   OnStart, OnStartChild,
   DownMessage, Module,
 } from './types';
+import type { From } from './system';
 import * as Proc from './process';
 import * as GS from './gen_server';
 
@@ -122,7 +123,7 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
         return { ok: initState };
       },
 
-      async handle_call(msg: unknown, from: PID | null, s: SupervisorState, supPid: PID): Promise<{ reply: unknown; state: SupervisorState } | { noreply: unknown; state: SupervisorState }> {
+      async handle_call(msg: unknown, from: From, s: SupervisorState, supPid: PID): Promise<{ reply: unknown; state: SupervisorState } | { noreply: unknown; state: SupervisorState }> {
         const { type, payload } = msg as { type: string; payload: unknown };
 
         if (type === 'count_children') {

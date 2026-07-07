@@ -2,21 +2,23 @@
 // Web runtime: cooperative event-loop scheduler.
 
 import type { PID, Ref, Dest, SpawnOpt, ProcessInfo } from './types';
+import { ActorSystem } from './system';
 import * as M from './mailbox';
 
 // ---- spawn ----------------------------------------------------------------
 
 export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[]): PID {
-  const pid = M.generatePid();
-  const proc = M.createProcess(pid);
-  M.registerProcess(pid, proc);
+  const sys = ActorSystem.current;
+  const pid = sys.generatePid();
+  const proc = sys.createProcess(pid);
+  sys.registerProcess(pid, proc);
 
   const link = opts?.includes('link') ?? false;
   const monitor = opts?.includes('monitor') ?? false;
-  const caller = M.getCurrentPid();
+  const caller = sys.getCurrentPid();
 
   if (link && caller) {
-    const callerProc = M.getProcess(caller);
+    const callerProc = sys.getProcess(caller);
     if (callerProc) {
       proc.links.add(caller);
       callerProc.links.add(pid);
@@ -25,16 +27,17 @@ export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[]): PID {
 
   if (monitor && caller) {
     const ref: Ref = Symbol('monitor');
-    const callerProc = M.getProcess(caller);
+    const callerProc = sys.getProcess(caller);
     if (callerProc) {
       proc.monitoredBy.set(caller, [ref]);
       callerProc.monitors.set(ref, pid);
     }
   }
 
-  // Schedule execution
+  // Schedule execution within the captured system
   queueMicrotask(() => {
-    const result = M.runWithPid(pid, () => {
+    ActorSystem.run(sys, () => {
+    const result = sys.runWithPid(pid, () => {
       try {
         return fn();
       } catch (err) {
@@ -48,7 +51,7 @@ export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[]): PID {
         proc.status = 'exiting';
         proc.exitReason = proc.exitReason ?? err ?? 'normal';
       }
-      M.handleExit(proc);
+      sys.handleExit(proc);
     };
 
     if (result instanceof Promise) {
@@ -56,6 +59,7 @@ export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[]): PID {
     } else {
       finish();
     }
+    }); // ActorSystem.run
   });
 
   return pid;
@@ -222,23 +226,23 @@ export function sleep(ms: number): Promise<void> {
 
 // ---- send_after / cancel_timer --------------------------------------------
 
-const timers = new Map<Ref, ReturnType<typeof setTimeout>>();
-
 export function send_after(dest: Dest, msg: unknown, ms: number): Ref {
+  const sys = ActorSystem.current;
   const ref: Ref = Symbol('timer');
   const handle = setTimeout(() => {
-    timers.delete(ref);
+    sys.timers.delete(ref);
     send(dest, msg);
   }, ms);
-  timers.set(ref, handle);
+  sys.timers.set(ref, handle);
   return ref;
 }
 
 export function cancel_timer(ref: Ref): void {
-  const handle = timers.get(ref);
+  const sys = ActorSystem.current;
+  const handle = sys.timers.get(ref);
   if (handle) {
     clearTimeout(handle);
-    timers.delete(ref);
+    sys.timers.delete(ref);
   }
 }
 

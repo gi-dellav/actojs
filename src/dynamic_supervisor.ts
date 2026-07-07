@@ -7,6 +7,7 @@ import type {
   OnStart, OnStartChild,
   DownMessage,
 } from './types';
+import type { From } from './system';
 import * as Proc from './process';
 import * as GS from './gen_server';
 
@@ -85,7 +86,7 @@ async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnSt
         return initState;
       },
 
-      async handle_call(msg: unknown, from: PID | null, s: DynamicSupervisorState, supPid: PID): Promise<{ reply: unknown; state: DynamicSupervisorState } | { noreply: unknown; state: DynamicSupervisorState }> {
+      async handle_call(msg: unknown, from: From, s: DynamicSupervisorState, supPid: PID): Promise<{ reply: unknown; state: DynamicSupervisorState } | { noreply: unknown; state: DynamicSupervisorState }> {
         const { type, payload } = msg as { type: string; payload: unknown };
 
         if (type === 'start_child') {

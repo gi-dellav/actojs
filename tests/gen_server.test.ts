@@ -219,4 +219,108 @@ describe('gen_server', () => {
       expect(infoReceived).toEqual({ custom: 'info' });
     });
   });
+
+  describe('deferred reply (noreply + GenServer.reply)', () => {
+    test('handle_call returning { noreply } does not resolve the call', async () => {
+      let savedFrom: any;
+      const result = await GS.startGenServer({
+        init() { return { count: 0 }; },
+        handle_call(msg: any, from: any, state: any) {
+          if (msg.type === 'defer') {
+            savedFrom = from;
+            return { noreply: undefined, state };
+          }
+          return { reply: 'immediate', state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      // This call should hang (not resolve immediately)
+      const callPromise = GS.genCall(result.ok, { type: 'defer' }, 500);
+
+      // It should eventually timeout
+      await expect(callPromise).rejects.toThrow('timeout');
+    });
+
+    test('GenServer.reply resolves a deferred call', async () => {
+      let savedFrom: any;
+      const result = await GS.startGenServer({
+        init() { return { count: 0 }; },
+        handle_call(msg: any, from: any, state: any) {
+          if (msg.type === 'defer') {
+            savedFrom = from;
+            return { noreply: undefined, state };
+          }
+          if (msg.type === 'resolve') {
+            GS.reply(savedFrom, 'deferred_result');
+            return { reply: 'ok', state };
+          }
+          return { reply: 'unknown', state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      const callPromise = GS.genCall(result.ok, { type: 'defer' }, 1000);
+      await sleep(10);
+      // Send a call to trigger the deferred reply (must be a call since handle_call is used)
+      await GS.genCall(result.ok, { type: 'resolve' });
+
+      const val = await callPromise;
+      expect(val).toBe('deferred_result');
+    });
+
+    test('GenServer.reply from info handler', async () => {
+      let savedFrom: any;
+      let pid: string = '';
+      const result = await GS.startGenServer({
+        init() { return {}; },
+        handle_call(msg: any, from: any, state: any) {
+          savedFrom = from;
+          return { noreply: undefined, state };
+        },
+        handle_info(msg: any, state: any) {
+          GS.reply(savedFrom, 'info_reply');
+          return { noreply: undefined, state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+      pid = result.ok;
+
+      const callPromise = GS.genCall(pid, { type: 'wait' }, 1000);
+      await sleep(5);
+      Process.send(pid, { wake: true });
+
+      const val = await callPromise;
+      expect(val).toBe('info_reply');
+    });
+
+    test('resolvePending is safe when called multiple times', async () => {
+      let savedFrom: any;
+      const result = await GS.startGenServer({
+        init() { return {}; },
+        handle_call(msg: any, from: any, state: any) {
+          if (msg.type === 'defer') {
+            savedFrom = from;
+            return { noreply: undefined, state };
+          }
+          return { reply: 'ok', state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      const promise = GS.genCall(result.ok, { type: 'defer' }, 500);
+
+      await sleep(5);
+
+      // Multiple replies should not crash
+      expect(() => {
+        GS.reply(savedFrom, 'first');
+        GS.reply(savedFrom, 'second');
+      }).not.toThrow();
+
+      // First reply wins
+      const val = await promise;
+      expect(val).toBe('first');
+    });
+  });
 });

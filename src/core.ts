@@ -1,6 +1,8 @@
-// acto/core — Runtime abstraction.
+// acto/core — Runtime abstraction + ActorSystem exports.
 // Web runtime: cooperative event-loop (default).
 // ponytail: pluggable runtimes for Node/Bun/Deno true parallelism.
+
+export { ActorSystem } from './system';
 
 export interface Runtime {
   name: string;

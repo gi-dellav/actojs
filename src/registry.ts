@@ -2,6 +2,7 @@
 // Web runtime: cooperative event-loop, built on GenServer.
 
 import type { PID, Ref, RegistryStartOptions, RegistryKeyMode, DownMessage } from './types';
+import type { From } from './system';
 import * as Proc from './process';
 import * as GS from './gen_server';
 
@@ -59,9 +60,10 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         return initState;
       },
 
-      handle_call(msg: unknown, from: PID, s: RegistryState, _myPid: PID) {
+      handle_call(msg: unknown, from: From, s: RegistryState, _myPid: PID) {
         const { type, payload } = msg as { type: string; payload: unknown };
-        const caller = from;
+        const caller = from.pid;
+        if (!caller) return { reply: { error: 'not_in_process' }, state: s };
         const keyMode = resolveKeyMode(s.keys);
 
         if (type === 'register') {

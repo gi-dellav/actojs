@@ -2,6 +2,7 @@
 // Web runtime: cooperative event-loop, built on GenServer.
 
 import type { PID, OnStart, MFA, Module } from './types';
+import type { From } from './system';
 import * as GS from './gen_server';
 
 type AgentFn<S, R = unknown> = (state: S) => R;
@@ -46,7 +47,7 @@ async function startGen<S>(init: () => S, opts?: { name?: string; link?: boolean
       init(_args: unknown): S {
         return state;
       },
-      handle_call(msg: unknown, _from: PID, s: S, _myPid: PID) {
+      handle_call(msg: unknown, _from: From, s: S, _myPid: PID) {
         const { type, payload } = (msg as { type: string; payload: unknown });
         if (type === 'get') {
           const fn = typeof payload === 'function' ? payload as AgentFn<S, unknown> : resolveFn<S, unknown>(payload as AgentArg<S, unknown>);

@@ -8,4 +8,4 @@ export * as DynamicSupervisor from './dynamic_supervisor';
 export * as Node from './node';
 export * as Core from './core';
 
-export { WebRuntime } from './core';
+export { WebRuntime, ActorSystem } from './core';
