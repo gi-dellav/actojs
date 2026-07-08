@@ -17,6 +17,7 @@ interface DynamicSupervisorModule {
 
 interface DynamicChildState {
   pid: PID;
+  spec: ChildSpec;
 }
 
 interface DynamicSupervisorState {
@@ -95,33 +96,19 @@ async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnSt
           }
 
           const spec = payload as ChildSpec;
-          // Prepend extra_arguments
           const fullArgs = [...s.extraArguments, ...spec.start[2]];
           const fullSpec: ChildSpec = { ...spec, start: [spec.start[0], spec.start[1], fullArgs] };
 
-          const [module, fnName, args] = fullSpec.start;
-          if (typeof module !== 'object' || module === null) {
-            return { reply: { error: new Error('invalid module') }, state: s };
-          }
-          if (typeof module[fnName] !== 'function') {
-            return { reply: { error: new Error(`function ${String(fnName)} not found`) }, state: s };
+          const childResult = startChildSpec(fullSpec);
+          const resolved = childResult instanceof Promise ? await childResult : childResult;
+          if ('error' in resolved) {
+            return { reply: resolved, state: s };
           }
 
-          let childResult: OnStartChild;
-          try {
-            childResult = await (module[fnName] as Function)(...args) as OnStartChild;
-          } catch (err) {
-            childResult = { error: err instanceof Error ? err : new Error(String(err)) };
-          }
-
-          if ('error' in childResult) {
-            return { reply: childResult, state: s };
-          }
-
-          const pid = (childResult as { ok: PID }).ok;
+          const pid = resolved.ok;
           Proc.monitor(pid, supPid);
-          s.children.set(pid, { pid });
-          return { reply: childResult, state: s };
+          s.children.set(pid, { pid, spec: fullSpec });
+          return { reply: resolved, state: s };
         }
 
         if (type === 'terminate_child') {
@@ -154,7 +141,7 @@ async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnSt
         return { reply: undefined, state: s };
       },
 
-      async handle_info(msg: unknown, s: DynamicSupervisorState, _myPid: PID): Promise<{ noreply: unknown; state: DynamicSupervisorState }> {
+      async handle_info(msg: unknown, s: DynamicSupervisorState, supPid: PID): Promise<{ noreply: unknown; state: DynamicSupervisorState }> {
         if (s.isShuttingDown) return { noreply: undefined, state: s };
 
         if (msg && typeof msg === 'object' && msg !== null && (msg as DownMessage).type === 'DOWN') {
@@ -174,9 +161,16 @@ async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnSt
             return { noreply: undefined, state: s };
           }
 
-          // DynamicSupervisor can't restart without the original spec
-          // ponytail: store child specs for automatic restart
+          const child = s.children.get(downPid);
           s.children.delete(downPid);
+          if (child) {
+            const result = startChildSpec(child.spec);
+            const resolved = result instanceof Promise ? await result : result;
+            if ('ok' in resolved) {
+              Proc.monitor(resolved.ok, supPid);
+              s.children.set(resolved.ok, { pid: resolved.ok, spec: child.spec });
+            }
+          }
         }
 
         return { noreply: undefined, state: s };
@@ -234,6 +228,28 @@ export async function stop(sup: PID, reason?: unknown): Promise<void> {
 }
 
 // ---- helpers --------------------------------------------------------------
+
+function startChildSpec(spec: ChildSpec): OnStartChild | Promise<OnStartChild> {
+  const [module, fnName, args] = spec.start;
+  if (typeof module !== 'object' || module === null) {
+    return { error: new Error('invalid module') };
+  }
+  if (typeof module[fnName] !== 'function') {
+    return { error: new Error(`function ${String(fnName)} not found`) };
+  }
+  try {
+    const result = (module[fnName] as Function)(...args);
+    if (result instanceof Promise) {
+      return result.then(
+        (v: OnStartChild) => v,
+        (err: unknown) => ({ error: err instanceof Error ? err : new Error(String(err)) }),
+      );
+    }
+    return result as OnStartChild;
+  } catch (err) {
+    return { error: err instanceof Error ? err : new Error(String(err)) };
+  }
+}
 
 function countChildren(s: DynamicSupervisorState): Counts {
   let active = 0;

@@ -253,5 +253,37 @@ describe('dynamic_supervisor', () => {
       const counts = await DynamicSupervisor.count_children(sup);
       expect(counts.active).toBe(0);
     });
+
+    test('restarts child on abnormal exit', async () => {
+      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
+      if ('error' in result) throw result.error;
+      const sup = result.ok;
+
+      let startCount = 0;
+      const mod = {
+        start_link() {
+          startCount++;
+          const pid = Process.spawn(async () => {
+            if (startCount === 1) throw new Error('crash');
+            await new Promise(() => {}); // stay alive
+          });
+          return { ok: pid };
+        },
+      };
+
+      const childSpec = {
+        id: 'crasher',
+        start: [mod, 'start_link', []] as [any, string, any[]],
+      };
+
+      await DynamicSupervisor.start_child(sup, childSpec);
+      await sleep(20);
+
+      // Child crashed once, supervisor should have restarted it
+      expect(startCount).toBe(2);
+
+      const counts = await DynamicSupervisor.count_children(sup);
+      expect(counts.active).toBe(1);
+    });
   });
 });

@@ -60,7 +60,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         return initState;
       },
 
-      handle_call(msg: unknown, from: From, s: RegistryState, _myPid: PID) {
+      handle_call(msg: unknown, from: From, s: RegistryState, myPid: PID) {
         const { type, payload } = msg as { type: string; payload: unknown };
         const caller = from.pid;
         if (!caller) return { reply: { error: 'not_in_process' }, state: s };
@@ -89,6 +89,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
           }
 
           part.set(key, entries);
+          Proc.monitor(caller, myPid);
           notifyListeners(s, 'register', key, caller, value);
           return { reply: { ok: caller }, state: s };
         }

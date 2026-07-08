@@ -339,28 +339,26 @@ describe('registry', () => {
   });
 
   describe('cleanup on DOWN', () => {
-    test('entries remain after registering process exits (ponytail: auto-cleanup)', async () => {
+    test('auto-cleans entries when registering process exits', async () => {
       const result = await Registry.start_link({ keys: 'unique' });
       if ('error' in result) throw result.error;
       const reg = result.ok;
 
-      const pid = Process.spawn(() => {});
+      const pid = Process.spawn(async () => { await new Promise(() => {}); });
       await sleep(5);
 
       M.pushPid(pid);
       await Registry.register(reg, 'fragile', 'data');
       M.popPid();
 
-      // Entry exists before exit
       let entries = await Registry.lookup(reg, 'fragile');
       expect(entries.length).toBe(1);
 
       Process.exit(pid, 'kill');
       await sleep(20);
 
-      // ponytail: registry should auto-cleanup on DOWN.
-      // Currently, entries persist after process exits.
-      // When cleanup is implemented, this test should assert entries.length === 0.
+      entries = await Registry.lookup(reg, 'fragile');
+      expect(entries.length).toBe(0);
     });
   });
 
