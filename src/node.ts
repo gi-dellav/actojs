@@ -7,7 +7,7 @@ import * as Proc from './process';
 
 let nodeName: string | null = null;
 const connectedNodes = new Set<string>();
-const nodeMonitors = new Set<Ref>();
+const nodeMonitors = new Map<string, { ref: Ref; pid: PID | null }[]>();
 const channelNamePrefix = '__actojs_node__';
 
 let broadcastChannel: BroadcastChannel | null = null;
@@ -22,6 +22,8 @@ interface WireMessage {
 interface SpawnPayloadFn {
   type: 'fn';
   source: string;
+  linkId?: string;
+  refId?: string;
 }
 
 interface SpawnPayloadMFA {
@@ -29,9 +31,31 @@ interface SpawnPayloadMFA {
   module: Module;
   fn: string;
   args: unknown[];
+  linkId?: string;
+  refId?: string;
 }
 
 type SpawnPayload = SpawnPayloadFn | SpawnPayloadMFA;
+
+interface CrossNodeLink {
+  localPid: PID;
+  remoteNode: string;
+}
+
+interface CrossNodeMonitor {
+  localRef: Ref;
+  localPid: PID;
+  remoteNode: string;
+}
+
+const crossNodeLinks = new Map<string, CrossNodeLink>();
+const crossNodeMonitors = new Map<string, CrossNodeMonitor>();
+const remoteSpawnRegistry = new Map<string, PID>();
+
+let linkIdCounter = 0;
+function generateLinkId(): string {
+  return `l_${nodeName}_${linkIdCounter++}`;
+}
 
 // ---- start / stop ---------------------------------------------------------
 
@@ -41,14 +65,12 @@ export function start(name: string, opts?: NodeStartOpts): { ok: PID } | { error
   }
   nodeName = name;
 
-  // Set up BroadcastChannel for same-origin communication
   try {
     broadcastChannel = new BroadcastChannel(channelNamePrefix + name);
     broadcastChannel.onmessage = (event) => {
       handleIncoming((event as MessageEvent).data as WireMessage);
     };
   } catch {
-    // BroadcastChannel not available (e.g., in workers)
     broadcastChannel = null;
   }
 
@@ -63,10 +85,33 @@ export function stop(): void | { error: Error } {
     broadcastChannel.close();
     broadcastChannel = null;
   }
-  // Notify monitors
-  for (const ref of nodeMonitors) {
-    Proc.send(Proc.self(), { type: 'node_disconnected', ref, node: nodeName });
+  const entries = nodeMonitors.get(nodeName);
+  if (entries) {
+    for (const { ref, pid } of entries) {
+      if (pid) {
+        Proc.send(pid, { type: 'node_disconnected', ref, node: nodeName });
+      }
+    }
+    nodeMonitors.delete(nodeName);
   }
+  for (const [_, link] of crossNodeLinks) {
+    Proc.send(link.localPid, {
+      type: 'EXIT',
+      from: nodeName,
+      reason: 'nodedown',
+    });
+  }
+  crossNodeLinks.clear();
+  for (const [_, mon] of crossNodeMonitors) {
+    Proc.send(mon.localPid, {
+      type: 'DOWN',
+      ref: mon.localRef,
+      pid: nodeName,
+      reason: 'nodedown',
+    });
+  }
+  crossNodeMonitors.clear();
+  remoteSpawnRegistry.clear();
   nodeName = null;
   connectedNodes.clear();
 }
@@ -89,7 +134,6 @@ export function connect(node: string): boolean | 'ignored' {
   if (connectedNodes.has(node)) return 'ignored';
   connectedNodes.add(node);
 
-  // Send ping via BroadcastChannel
   if (broadcastChannel) {
     broadcastChannel.postMessage({
       from: nodeName,
@@ -108,8 +152,16 @@ export function disconnect(node: string): void {
 // ---- ping -----------------------------------------------------------------
 
 export function ping(node: string): 'pong' | 'pang' {
-  // Ponytail: true bidirectional ping. For now, check if we think we're connected.
-  return connectedNodes.has(node) ? 'pong' : 'pang';
+  if (!connectedNodes.has(node)) return 'pang';
+  if (broadcastChannel) {
+    broadcastChannel.postMessage({
+      from: nodeName!,
+      to: node,
+      type: 'ping',
+      payload: null,
+    });
+  }
+  return 'pong';
 }
 
 // ---- list -----------------------------------------------------------------
@@ -129,12 +181,42 @@ export function list(state?: string | string[]): string[] {
 
 // ---- monitor --------------------------------------------------------------
 
-export function monitor(node: string, flag: boolean): void {
+export function monitor(node: string, flag: boolean): Ref | void {
   if (flag) {
     const ref: Ref = Symbol('node_monitor');
-    nodeMonitors.add(ref);
+    let pid: PID | null = null;
+    try {
+      pid = Proc.self();
+    } catch (_) {}
+    const entries = nodeMonitors.get(node) ?? [];
+    entries.push({ ref, pid });
+    nodeMonitors.set(node, entries);
+    return ref;
+  } else {
+    let pid: PID | null = null;
+    try {
+      pid = Proc.self();
+    } catch (_) {}
+    const entries = nodeMonitors.get(node);
+    if (entries) {
+      const idx = entries.findIndex(e => e.pid === pid);
+      if (idx !== -1) {
+        entries.splice(idx, 1);
+        if (entries.length === 0) nodeMonitors.delete(node);
+      }
+    }
   }
-  // ponytail: specific node monitor references
+}
+
+export function demonitor_node(ref: Ref): void {
+  for (const [node, entries] of nodeMonitors) {
+    const idx = entries.findIndex(e => e.ref === ref);
+    if (idx !== -1) {
+      entries.splice(idx, 1);
+      if (entries.length === 0) nodeMonitors.delete(node);
+      break;
+    }
+  }
 }
 
 // ---- spawn remote ---------------------------------------------------------
@@ -152,13 +234,11 @@ export function spawn(
   let spawnPayload: SpawnPayload;
 
   if (typeof fnOrModule === 'function') {
-    // Inline function — serialize it
     spawnPayload = {
       type: 'fn',
       source: fnOrModule.toString(),
     };
   } else {
-    // Module/function/args style
     spawnPayload = {
       type: 'mfa',
       module: fnOrModule,
@@ -171,8 +251,8 @@ export function spawn(
     broadcastChannel!.postMessage({
       from: nodeName!,
       to: node,
-    type: 'spawn',
-    payload: spawnPayload,
+      type: 'spawn',
+      payload: spawnPayload,
     });
   });
 
@@ -185,8 +265,67 @@ export function spawn_link(
   fnName?: string,
   args?: unknown[],
 ): PID {
-  return spawn(node, fnOrModule, fnName, args);
-  // ponytail: actual cross-node linking
+  if (!broadcastChannel) {
+    throw new Error('BroadcastChannel not available');
+  }
+
+  const linkId = generateLinkId();
+  let callerPid: PID | null = null;
+  try {
+    callerPid = Proc.self();
+  } catch (_) {}
+
+  let spawnPayload: SpawnPayload;
+
+  if (typeof fnOrModule === 'function') {
+    spawnPayload = {
+      type: 'fn',
+      source: fnOrModule.toString(),
+      linkId,
+    };
+  } else {
+    spawnPayload = {
+      type: 'mfa',
+      module: fnOrModule,
+      fn: fnName!,
+      args: args ?? [],
+      linkId,
+    };
+  }
+
+  const fakePid = Proc.spawn(() => {
+    broadcastChannel!.postMessage({
+      from: nodeName!,
+      to: node,
+      type: 'spawn',
+      payload: spawnPayload,
+    });
+  });
+
+  if (callerPid) {
+    crossNodeLinks.set(linkId, { localPid: callerPid, remoteNode: node });
+
+    Proc.spawn(async () => {
+      const monRef = Proc.monitor(callerPid!);
+      const msg = await Proc.receive();
+      if (msg && (msg as { type: string; ref: Ref }).type === 'DOWN') {
+        const downMsg = msg as { type: 'DOWN'; ref: Ref; pid: PID; reason: unknown };
+        if (downMsg.ref === monRef) {
+          crossNodeLinks.delete(linkId);
+          if (broadcastChannel) {
+            broadcastChannel.postMessage({
+              from: nodeName,
+              to: node,
+              type: 'spawn_kill',
+              payload: { linkId, reason: downMsg.reason },
+            });
+          }
+        }
+      }
+    });
+  }
+
+  return fakePid;
 }
 
 export function spawn_monitor(
@@ -195,15 +334,59 @@ export function spawn_monitor(
   fnName?: string,
   args?: unknown[],
 ): { pid: PID; ref: Ref } {
-  const pid = spawn(node, fnOrModule, fnName, args);
-  const ref: Ref = Symbol('monitor');
-  return { pid, ref };
+  if (!broadcastChannel) {
+    throw new Error('BroadcastChannel not available');
+  }
+
+  const refId = generateLinkId();
+  const localRef: Ref = Symbol('monitor');
+  let callerPid: PID | null = null;
+  try {
+    callerPid = Proc.self();
+  } catch (_) {}
+
+  let spawnPayload: SpawnPayload;
+
+  if (typeof fnOrModule === 'function') {
+    spawnPayload = {
+      type: 'fn',
+      source: fnOrModule.toString(),
+      refId,
+    };
+  } else {
+    spawnPayload = {
+      type: 'mfa',
+      module: fnOrModule,
+      fn: fnName!,
+      args: args ?? [],
+      refId,
+    };
+  }
+
+  const fakePid = Proc.spawn(() => {
+    broadcastChannel!.postMessage({
+      from: nodeName!,
+      to: node,
+      type: 'spawn',
+      payload: spawnPayload,
+    });
+  });
+
+  if (callerPid) {
+    crossNodeMonitors.set(refId, {
+      localRef,
+      localPid: callerPid,
+      remoteNode: node,
+    });
+  }
+
+  return { pid: fakePid, ref: localRef };
 }
 
 // ---- internal -------------------------------------------------------------
 
 function handleIncoming(msg: WireMessage): void {
-  if (msg.to && msg.to !== nodeName) return; // Not for us
+  if (msg.to && msg.to !== nodeName) return;
 
   switch (msg.type) {
     case 'connect': {
@@ -212,23 +395,145 @@ function handleIncoming(msg: WireMessage): void {
       }
       break;
     }
+    case 'ping': {
+      if (broadcastChannel && msg.from) {
+        broadcastChannel.postMessage({
+          from: nodeName,
+          to: msg.from,
+          type: 'pong',
+          payload: null,
+        });
+      }
+      break;
+    }
+    case 'pong': {
+      break;
+    }
     case 'spawn': {
       const payload = msg.payload as SpawnPayload;
+      const originNode = msg.from;
+      let spawnedPid: PID | null = null;
+
       if (payload.type === 'fn') {
         try {
           const fn = new Function(`return (${payload.source})`)();
-          Proc.spawn(fn);
+          spawnedPid = Proc.spawn(fn);
         } catch (_) {}
       } else if (payload.type === 'mfa') {
         const { module, fn: fnName, args } = payload;
         try {
           if (typeof module[fnName] === 'function') {
-            module[fnName](...args);
+            spawnedPid = Proc.spawn(() => {
+              (module[fnName] as Function)(...args);
+            });
           }
         } catch (_) {}
       }
+
+      if (spawnedPid && originNode) {
+        if (payload.linkId) {
+          remoteSpawnRegistry.set(payload.linkId, spawnedPid);
+          const capturedPid = spawnedPid;
+          const capturedLinkId = payload.linkId;
+          Proc.spawn(async () => {
+            const monRef = Proc.monitor(capturedPid);
+            const downMsg = await Proc.receive();
+            if (
+              downMsg &&
+              (downMsg as { type: string }).type === 'DOWN' &&
+              (downMsg as { ref: Ref }).ref === monRef
+            ) {
+              remoteSpawnRegistry.delete(capturedLinkId);
+              if (broadcastChannel) {
+                broadcastChannel.postMessage({
+                  from: nodeName,
+                  to: originNode,
+                  type: 'spawn_exit',
+                  payload: {
+                    linkId: capturedLinkId,
+                    remotePid: capturedPid,
+                    reason: (downMsg as { reason: unknown }).reason,
+                  },
+                });
+              }
+            }
+          });
+        }
+
+        if (payload.refId) {
+          remoteSpawnRegistry.set(payload.refId, spawnedPid);
+          const capturedPid = spawnedPid;
+          const capturedRefId = payload.refId;
+          Proc.spawn(async () => {
+            const monRef = Proc.monitor(capturedPid);
+            const downMsg = await Proc.receive();
+            if (
+              downMsg &&
+              (downMsg as { type: string }).type === 'DOWN' &&
+              (downMsg as { ref: Ref }).ref === monRef
+            ) {
+              remoteSpawnRegistry.delete(capturedRefId);
+              if (broadcastChannel) {
+                broadcastChannel.postMessage({
+                  from: nodeName,
+                  to: originNode,
+                  type: 'spawn_down',
+                  payload: {
+                    refId: capturedRefId,
+                    remotePid: capturedPid,
+                    reason: (downMsg as { reason: unknown }).reason,
+                  },
+                });
+              }
+            }
+          });
+        }
+      }
       break;
     }
-    // ponytail: more message types (ping/pong, etc.)
+    case 'spawn_exit': {
+      const { linkId, remotePid, reason } = msg.payload as {
+        linkId: string;
+        remotePid: string;
+        reason: unknown;
+      };
+      const link = crossNodeLinks.get(linkId);
+      if (link) {
+        Proc.send(link.localPid, {
+          type: 'EXIT',
+          from: remotePid,
+          reason,
+        });
+        crossNodeLinks.delete(linkId);
+      }
+      break;
+    }
+    case 'spawn_down': {
+      const { refId, remotePid, reason } = msg.payload as {
+        refId: string;
+        remotePid: string;
+        reason: unknown;
+      };
+      const mon = crossNodeMonitors.get(refId);
+      if (mon) {
+        Proc.send(mon.localPid, {
+          type: 'DOWN',
+          ref: mon.localRef,
+          pid: remotePid,
+          reason,
+        });
+        crossNodeMonitors.delete(refId);
+      }
+      break;
+    }
+    case 'spawn_kill': {
+      const { linkId, reason } = msg.payload as { linkId: string; reason: unknown };
+      const pid = remoteSpawnRegistry.get(linkId);
+      if (pid) {
+        Proc.exit(pid, reason ?? 'kill');
+        remoteSpawnRegistry.delete(linkId);
+      }
+      break;
+    }
   }
 }
