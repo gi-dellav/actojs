@@ -15,8 +15,12 @@
     "./core": "./src/core.ts",
     "./system": "./src/system.ts"
   },
+  "scripts": {
+    "build:docs": "typedoc"
+  },
   "devDependencies": {
-    "@types/bun": "^1.3.14"
+    "@types/bun": "^1.3.14",
+    "typedoc": "^0.28.20"
   },
   "peerDependencies": {
     "typescript": "^5"

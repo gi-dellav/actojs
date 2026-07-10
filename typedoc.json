@@ -1,0 +1,21 @@
+{
+  "entryPoints": ["src/index.ts", "src/types.ts", "src/system.ts", "src/core.ts"],
+  "out": "docs",
+  "tsconfig": "tsconfig.doc.json",
+  "plugin": [],
+  "excludePrivate": true,
+  "excludeProtected": false,
+  "includeVersion": true,
+  "readme": "README.md",
+  "name": "ActoJS",
+  "githubPages": false,
+  "sort": ["source-order"],
+  "kindSortOrder": [
+    "Class",
+    "Interface",
+    "TypeAlias",
+    "Enum",
+    "Function",
+    "Variable"
+  ]
+}
