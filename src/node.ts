@@ -59,6 +59,7 @@ function generateLinkId(): string {
 
 // ---- start / stop ---------------------------------------------------------
 
+// Start a named node for distributed communication via BroadcastChannel.
 export function start(name: string, opts?: NodeStartOpts): { ok: PID } | { error: Error } {
   if (nodeName) {
     return { error: new Error('node already started') };
@@ -77,6 +78,7 @@ export function start(name: string, opts?: NodeStartOpts): { ok: PID } | { error
   return { ok: Proc.self() };
 }
 
+// Stop the node, closing all connections and sending disconnect notifications.
 export function stop(): void | { error: Error } {
   if (!nodeName) {
     return { error: new Error('node not started') };
@@ -118,17 +120,20 @@ export function stop(): void | { error: Error } {
 
 // ---- self / alive? --------------------------------------------------------
 
+// Return the name of the current node. Throws if no node has been started.
 export function self(): string {
   if (!nodeName) throw new Error('node not started');
   return nodeName;
 }
 
+// Check whether a node has been started and is still alive.
 export function alive(): boolean {
   return nodeName !== null;
 }
 
 // ---- connect / disconnect -------------------------------------------------
 
+// Connect to a remote node by name, sending a handshake via BroadcastChannel.
 export function connect(node: string): boolean | 'ignored' {
   if (!nodeName) return false;
   if (connectedNodes.has(node)) return 'ignored';
@@ -145,12 +150,14 @@ export function connect(node: string): boolean | 'ignored' {
   return true;
 }
 
+// Disconnect from a previously connected node.
 export function disconnect(node: string): void {
   connectedNodes.delete(node);
 }
 
 // ---- ping -----------------------------------------------------------------
 
+// Ping a connected node. Returns 'pong' if known, 'pang' otherwise.
 export function ping(node: string): 'pong' | 'pang' {
   if (!connectedNodes.has(node)) return 'pang';
   if (broadcastChannel) {
@@ -166,6 +173,7 @@ export function ping(node: string): 'pong' | 'pang' {
 
 // ---- list -----------------------------------------------------------------
 
+// List nodes matching the given visibility states. Defaults to visible and connected.
 export function list(state?: string | string[]): string[] {
   if (!nodeName) return [];
   const states = state ? (Array.isArray(state) ? state : [state]) : ['visible', 'connected'];
@@ -181,6 +189,7 @@ export function list(state?: string | string[]): string[] {
 
 // ---- monitor --------------------------------------------------------------
 
+// Start or stop monitoring a node. Pass flag=true to monitor (returns ref), false to stop.
 export function monitor(node: string, flag: boolean): Ref | void {
   if (flag) {
     const ref: Ref = Symbol('node_monitor');
@@ -208,6 +217,7 @@ export function monitor(node: string, flag: boolean): Ref | void {
   }
 }
 
+// Stop monitoring a node identified by the given monitor reference.
 export function demonitor_node(ref: Ref): void {
   for (const [node, entries] of nodeMonitors) {
     const idx = entries.findIndex(e => e.ref === ref);
@@ -221,6 +231,7 @@ export function demonitor_node(ref: Ref): void {
 
 // ---- spawn remote ---------------------------------------------------------
 
+// Spawn a function or MFA on a remote node via BroadcastChannel.
 export function spawn(
   node: string,
   fnOrModule: (() => void) | Module,
@@ -259,6 +270,7 @@ export function spawn(
   return fakePid;
 }
 
+// Spawn a function or MFA on a remote node and link it to the caller.
 export function spawn_link(
   node: string,
   fnOrModule: (() => void) | Module,
@@ -328,6 +340,7 @@ export function spawn_link(
   return fakePid;
 }
 
+// Spawn a function or MFA on a remote node and monitor it. Returns pid and ref.
 export function spawn_monitor(
   node: string,
   fnOrModule: (() => void) | Module,

@@ -7,6 +7,7 @@ import * as Proc from './process';
 
 export { TimeoutError } from './system';
 
+// Start a fire-and-forget asynchronous computation. Returns a handle for awaiting.
 export function async<R>(fn: () => Promise<R>): TaskHandle<R> {
   const sys = ActorSystem.current;
   const ref: Ref = Symbol('task');
@@ -35,6 +36,7 @@ export function async<R>(fn: () => Promise<R>): TaskHandle<R> {
   return { pid, ref };
 }
 
+// Block until the task completes, returning its result. Supports an optional timeout.
 export function await_<R>(task: TaskHandle<R>, timeout?: number): Promise<R> {
   const sys = ActorSystem.current;
   const result = sys.taskResults.get(task.ref);
@@ -61,6 +63,7 @@ export function await_<R>(task: TaskHandle<R>, timeout?: number): Promise<R> {
   });
 }
 
+// Non-blocking poll: return the result if done, or null if still pending/errored.
 export function yield_<R>(task: TaskHandle<R>): Promise<R | null> {
   const sys = ActorSystem.current;
   const result = sys.taskResults.get(task.ref);
@@ -70,6 +73,7 @@ export function yield_<R>(task: TaskHandle<R>): Promise<R | null> {
   return Promise.resolve(null);
 }
 
+// Terminate the task's process and clean up its result entry.
 export async function shutdown(task: TaskHandle<unknown>): Promise<void> {
   if (Proc.alive(task.pid)) {
     Proc.exit(task.pid, 'shutdown');

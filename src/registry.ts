@@ -40,6 +40,7 @@ function getPartition(key: string, numPartitions: number): number {
 
 // ---- start_link -----------------------------------------------------------
 
+// Start a local, decentralised key-value registry process and link it to the caller.
 export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID } | { error: Error }> {
   const numPartitions = opts.partitions ?? 1;
   const partitions = new Map<number, Map<string, RegistryEntry[]>>();
@@ -254,6 +255,7 @@ function matchPattern(value: unknown, pattern: unknown): boolean {
 
 // ---- public API -----------------------------------------------------------
 
+// Register the caller's PID under a key with an associated value.
 export function register(
   reg: PID,
   key: string,
@@ -263,10 +265,12 @@ export function register(
   return GS.genCall(reg, { type: 'register', payload: { key, value } }, timeout) as Promise<{ ok: PID } | { error: string }>;
 }
 
+// Remove the caller's registration for the given key.
 export function unregister(reg: PID, key: string, timeout?: number): Promise<void> {
   return GS.genCall(reg, { type: 'unregister', payload: { key } }, timeout) as Promise<void>;
 }
 
+// Return all {pid, value} entries registered under the given key.
 export function lookup(
   reg: PID,
   key: string,
@@ -275,6 +279,7 @@ export function lookup(
   return GS.genCall(reg, { type: 'lookup', payload: { key } }, timeout) as Promise<{ pid: PID; value: unknown }[]>;
 }
 
+// Find entries whose values match a pattern object, with optional guard functions.
 export function match(
   reg: PID,
   key: string,
@@ -285,6 +290,7 @@ export function match(
   return GS.genCall(reg, { type: 'match', payload: { key, pattern, guards } }, timeout) as Promise<{ pid: PID; value: unknown }[]>;
 }
 
+// Invoke a callback for each entry under the key, up to an optional limit.
 export function dispatch(
   reg: PID,
   key: string,
@@ -295,18 +301,22 @@ export function dispatch(
   return GS.genCall(reg, { type: 'dispatch', payload: { key, callback, opts } }, timeout) as Promise<void>;
 }
 
+// Return all keys under which the given PID is registered.
 export function keys(reg: PID, pid: PID, timeout?: number): Promise<string[]> {
   return GS.genCall(reg, { type: 'keys', payload: { pid } }, timeout) as Promise<string[]>;
 }
 
+// Return all values associated with a specific PID under the given key.
 export function values(reg: PID, key: string, pid: PID, timeout?: number): Promise<unknown[]> {
   return GS.genCall(reg, { type: 'values', payload: { key, pid } }, timeout) as Promise<unknown[]>;
 }
 
+// Return the total number of registered entries across all partitions.
 export function count(reg: PID, timeout?: number): Promise<number> {
   return GS.genCall(reg, { type: 'count', payload: {} }, timeout) as Promise<number>;
 }
 
+// Atomically update the value for the caller's registration under the given key.
 export function update_value(
   reg: PID,
   key: string,

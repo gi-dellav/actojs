@@ -26,10 +26,12 @@ function resolveFn<S, R>(arg: AgentArg<S, R>): AgentFn<S, R> {
 
 // ---- start / start_link ---------------------------------------------------
 
+// Start an agent process initialized with the given state factory.
 export async function start<S>(init: () => S, opts?: { name?: string }): Promise<OnStart> {
   return startGen(init, { ...opts, link: false });
 }
 
+// Start an agent process and link it to the caller.
 export async function start_link<S>(init: () => S, opts?: { name?: string }): Promise<OnStart> {
   return startGen(init, { ...opts, link: true });
 }
@@ -79,6 +81,7 @@ async function startGen<S>(init: () => S, opts?: { name?: string; link?: boolean
 
 // ---- get ------------------------------------------------------------------
 
+// Synchronously read from the agent's state by applying the given function.
 export async function get<S, R>(agent: PID | { module: Module; args: unknown[] }, fn: AgentArg<S, R>, timeout?: number): Promise<R> {
   const pid = resolvePid(agent);
   return GS.genCall(pid, { type: 'get', payload: fn }, timeout) as Promise<R>;
@@ -86,6 +89,7 @@ export async function get<S, R>(agent: PID | { module: Module; args: unknown[] }
 
 // ---- update ---------------------------------------------------------------
 
+// Transform the agent's state by applying the given function.
 export async function update<S>(agent: PID | { module: Module; args: unknown[] }, fn: AgentArg<S, S>, timeout?: number): Promise<void> {
   const pid = resolvePid(agent);
   await GS.genCall(pid, { type: 'update', payload: fn }, timeout);
@@ -93,6 +97,7 @@ export async function update<S>(agent: PID | { module: Module; args: unknown[] }
 
 // ---- get_and_update -------------------------------------------------------
 
+// Atomically read and update the agent's state in one operation.
 export async function get_and_update<S, R>(
   agent: PID | { module: Module; args: unknown[] },
   fn: AgentArg<S, [R, S]>,
@@ -104,6 +109,7 @@ export async function get_and_update<S, R>(
 
 // ---- cast -----------------------------------------------------------------
 
+// Asynchronously apply an update to the agent's state without waiting for a reply.
 export function cast<S>(agent: PID | { module: Module; args: unknown[] }, fn: AgentArg<S, S>): void {
   const pid = resolvePid(agent);
   GS.genCast(pid, { type: 'cast', payload: fn });
@@ -111,6 +117,7 @@ export function cast<S>(agent: PID | { module: Module; args: unknown[] }, fn: Ag
 
 // ---- stop -----------------------------------------------------------------
 
+// Gracefully stop the agent process with an optional reason and timeout.
 export async function stop(agent: PID | { module: Module; args: unknown[] }, reason?: unknown, timeout?: number): Promise<void> {
   const pid = resolvePid(agent);
   await GS.genStop(pid, reason, timeout);
