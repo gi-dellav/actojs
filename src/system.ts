@@ -30,6 +30,9 @@ export type OnExitHandler = (report: ExitReport) => void;
 export interface ProcessState {
   pid: PID;
   mailbox: unknown[];
+  // Pointer-based queue head to avoid O(n) Array.shift().
+  // When mailboxHead > 0, the logical queue is mailbox.slice(mailboxHead).
+  mailboxHead: number;
   recvResolve: ((msg: unknown) => void) | null;
   links: Set<PID>;
   monitors: Map<Ref, PID>;
@@ -158,6 +161,7 @@ export class ActorSystem {
     return {
       pid,
       mailbox: [],
+      mailboxHead: 0,
       recvResolve: null,
       links: new Set(),
       monitors: new Map(),
@@ -251,11 +255,12 @@ export class ActorSystem {
 
     // Mailbox overflow guard — skip for SYSTEM messages to avoid recursion.
     const isSystem = msg != null && typeof msg === 'object' && (msg as Record<string, unknown>).type === 'SYSTEM';
-    if (!isSystem && proc.maxMailboxSize > 0 && proc.mailbox.length >= proc.maxMailboxSize) {
+    const mboxLen = proc.mailbox.length - proc.mailboxHead;
+    if (!isSystem && proc.maxMailboxSize > 0 && mboxLen >= proc.maxMailboxSize) {
       const overflowMsg = {
         type: 'SYSTEM',
         subtype: 'mailbox_overflow',
-        size: proc.mailbox.length,
+        size: mboxLen,
         limit: proc.maxMailboxSize,
         droppedType: typeof msg,
       };
@@ -299,8 +304,11 @@ export class ActorSystem {
     const proc = this.processes.get(effectivePid);
     if (!proc) return Promise.reject(new Error('process not found'));
 
-    if (proc.mailbox.length > 0) {
-      return Promise.resolve(proc.mailbox.shift());
+    if (proc.mailbox.length > proc.mailboxHead) {
+      const msg = proc.mailbox[proc.mailboxHead];
+      proc.mailboxHead++;
+      this.compactMailbox(proc);
+      return Promise.resolve(msg);
     }
 
     return new Promise((resolve, reject) => {
@@ -318,10 +326,41 @@ export class ActorSystem {
   /** Return the number of messages waiting in a process's mailbox. */
   getMailboxLength(pid: PID): number {
     const proc = this.processes.get(pid);
-    return proc ? proc.mailbox.length + (proc.recvResolve ? 0 : 0) : 0;
+    return proc ? proc.mailbox.length - proc.mailboxHead : 0;
   }
 
-  // ---- Exit handling -----------------------------------------------------
+  // Compact a process mailbox when the head pointer has advanced far enough.
+  compactMailbox(proc: ProcessState): void {
+    if (proc.mailboxHead > 1000 || proc.mailboxHead >= proc.mailbox.length / 2) {
+      if (proc.mailboxHead >= proc.mailbox.length) {
+        proc.mailbox = [];
+      } else {
+        proc.mailbox = proc.mailbox.slice(proc.mailboxHead);
+      }
+      proc.mailboxHead = 0;
+    }
+  }
+
+  // Synchronously dequeue the next message from a process mailbox.
+  // Returns undefined if the mailbox is empty.
+  shiftMessage(pid: PID): unknown | undefined {
+    const proc = this.processes.get(pid);
+    if (!proc || proc.status === 'exited' || proc.status === 'exiting') return undefined;
+    if (proc.mailbox.length <= proc.mailboxHead) return undefined;
+    const msg = proc.mailbox[proc.mailboxHead];
+    proc.mailboxHead++;
+    this.compactMailbox(proc);
+    return msg;
+  }
+
+  // Returns true if the process mailbox has pending messages.
+  hasMessages(pid: PID): boolean {
+    const proc = this.processes.get(pid);
+    if (!proc) return false;
+    return proc.mailbox.length > proc.mailboxHead;
+  }
+
+  // ---- Scheduling helpers ------------------------------------------------
 
   /** Perform the full exit protocol: notify links and monitors, then deregister. */
   handleExit(proc: ProcessState): void {
@@ -401,6 +440,35 @@ export class ActorSystem {
   }
 
   // ---- PID context tracking ----------------------------------------------
+
+  // Synchronously increment the message counter for budget tracking.
+  // Returns true when the budget is exhausted and the caller should yield.
+  countMessage(pid: PID): boolean {
+    const proc = this.processes.get(pid);
+    if (!proc || proc.messageBudget <= 0) return false;
+    proc.messageCount++;
+    if (proc.messageCount < proc.messageBudget) return false;
+    proc.messageCount = 0;
+    return true;
+  }
+
+  // Perform the actual event-loop yield plus memory check.
+  // Call this only when countMessage returns true or at safe boundaries.
+  async doYield(pid: PID): Promise<void> {
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    const proc = this.processes.get(pid);
+    if (proc && proc.maxMemory > 0) {
+      const mem = ActorSystem.getMemoryUsage();
+      if (mem && mem.rss > proc.maxMemory) {
+        this.deliverMessage(pid, {
+          type: 'SYSTEM',
+          subtype: 'memory_limit',
+          usage: mem.rss,
+          limit: proc.maxMemory,
+        });
+      }
+    }
+  }
 
   // Yield to the event loop when the message budget is exhausted,
   // then check the process memory usage against its limit.

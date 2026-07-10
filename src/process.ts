@@ -98,13 +98,18 @@ export function spawn_link(fn: () => void): PID {
 /** Deliver a message to a destination, resolving registered names to PIDs. */
 export function send(dest: Dest, msg: unknown): void {
   if (typeof dest === 'string') {
-    // Could be a PID or a registered name
+    // Fast-path: PIDs have the format #PID<...> — skip name registry lookup.
+    if (dest.startsWith('#PID<')) {
+      M.deliverMessage(dest, msg);
+      return;
+    }
+    // Could be a registered name
     const named = M.whereisName(dest);
     if (named) {
       M.deliverMessage(named, msg);
       return;
     }
-    // Assume it's a PID
+    // Assume it's a raw PID (e.g. custom format)
     M.deliverMessage(dest, msg);
   }
 }

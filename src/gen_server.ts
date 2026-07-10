@@ -88,8 +88,13 @@ export async function startGenServer<S>(
 
     const loop = async () => {
       while (Proc.alive(me)) {
-        const msg = await M.receiveMessage(me);
+        // Try synchronous dequeue first; only block on await if mailbox is empty.
+        let msg = sys.shiftMessage(me);
+        if (msg === undefined) {
+          msg = await M.receiveMessage(me);
+        }
 
+        // Dispatch — no per-message yield; batch-drain via the outer while.
         if (msg && typeof msg === 'object' && msg !== null) {
           const tagged = msg as { __gen_server__?: string; replyTo?: PID; ref?: Ref };
 
@@ -131,11 +136,7 @@ export async function startGenServer<S>(
                 resolvePending(ref, { error: err });
               }
             }
-            await sys.yieldIfNeeded(me);
-            continue;
-          }
-
-          if (tagged.__gen_server__ === 'cast' && callbacks.handle_cast) {
+          } else if (tagged.__gen_server__ === 'cast' && callbacks.handle_cast) {
             const { payload } = msg as GenCastMsg;
             try {
               const proc = sys.getProcess(me);
@@ -165,11 +166,7 @@ export async function startGenServer<S>(
                 }
               }
             }
-            await sys.yieldIfNeeded(me);
-            continue;
-          }
-
-          if (tagged.__gen_server__ === 'stop') {
+          } else if (tagged.__gen_server__ === 'stop') {
             const { reason, __stop_ref } = msg as GenStopMsg;
             Proc.put('__terminate_info__', { reason, exitType: 'stop' } satisfies TerminateInfo);
             try {
@@ -181,17 +178,23 @@ export async function startGenServer<S>(
             if (__stop_ref) resolvePending(__stop_ref, { ok: undefined });
             Proc.exit(me, reason ?? 'normal');
             return;
+          } else if (callbacks.handle_info) {
+            try {
+              const result = await callbacks.handle_info(msg, state, me);
+              if (result) state = result.state;
+            } catch (_) {}
           }
-        }
-
-        if (callbacks.handle_info) {
+        } else if (callbacks.handle_info) {
           try {
             const result = await callbacks.handle_info(msg, state, me);
             if (result) state = result.state;
           } catch (_) {}
         }
 
-        await sys.yieldIfNeeded(me);
+        // Only yield at budget boundaries, not after every single message.
+        if (sys.countMessage(me)) {
+          await sys.doYield(me);
+        }
       }
     };
 

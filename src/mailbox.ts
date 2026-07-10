@@ -71,6 +71,22 @@ export function getMailboxLength(pid: PID): number {
   return ActorSystem.current.getMailboxLength(pid);
 }
 
+export function shiftMessage(pid: PID): unknown | undefined {
+  return ActorSystem.current.shiftMessage(pid);
+}
+
+export function hasMessages(pid: PID): boolean {
+  return ActorSystem.current.hasMessages(pid);
+}
+
+export function countMessage(pid: PID): boolean {
+  return ActorSystem.current.countMessage(pid);
+}
+
+export function doYield(pid: PID): Promise<void> {
+  return ActorSystem.current.doYield(pid);
+}
+
 export function handleExit(proc: ProcessState): void {
   ActorSystem.current.handleExit(proc);
 }
