@@ -1,6 +1,8 @@
 // actojs — Internal GenServer base for Agent, Registry, Supervisor, etc.
 // Provides a receive loop with handle_call / handle_cast / handle_info.
 // Web runtime: cooperative event-loop.
+// Includes fault-isolation: message budget yielding, execution timeouts,
+// and memory-limit checks at yield points.
 
 import type { PID, Ref } from './types';
 import { ActorSystem, type From, type PendingCall, TimeoutError } from './system';
@@ -81,6 +83,9 @@ export async function startGenServer<S>(
 
     initDone();
 
+    // Resolve the current ActorSystem once for the lifetime of the loop.
+    const sys = ActorSystem.current;
+
     const loop = async () => {
       while (Proc.alive(me)) {
         const msg = await M.receiveMessage(me);
@@ -92,24 +97,75 @@ export async function startGenServer<S>(
             const { replyTo, ref, payload } = msg as GenCallMsg;
             const from: From = { pid: replyTo, ref };
             try {
-              const result = await callbacks.handle_call(payload, from, state, me);
+              const proc = sys.getProcess(me);
+              const timeout = proc?.execTimeout ?? 0;
+              const handler = callbacks.handle_call(payload, from, state, me);
+              const result = timeout > 0
+                ? await Promise.race([
+                    handler,
+                    new Promise<never>((_, rej) =>
+                      setTimeout(() => rej(new TimeoutError('execution timeout')), timeout),
+                    ),
+                  ])
+                : await handler;
               state = result.state;
               if ('reply' in result) {
                 resolvePending(ref, { ok: result.reply });
               }
-              // { noreply }: leave pending — caller waits for GenServer.reply()
             } catch (err) {
-              resolvePending(ref, { error: err });
+              if (err instanceof TimeoutError && err.message === 'execution timeout') {
+                const proc = sys.getProcess(me);
+                if (proc) {
+                  proc.execTimeoutCount++;
+                  console.error(
+                    `[actojs] execution timeout in ${me} (${proc.execTimeoutCount})`,
+                  );
+                  if (proc.execTimeoutCount >= 3) {
+                    resolvePending(ref, { error: new Error('too many execution timeouts') });
+                    Proc.exit(me, 'too_many_exec_timeouts');
+                    return;
+                  }
+                }
+                resolvePending(ref, { error: err });
+              } else {
+                resolvePending(ref, { error: err });
+              }
             }
+            await sys.yieldIfNeeded(me);
             continue;
           }
 
           if (tagged.__gen_server__ === 'cast' && callbacks.handle_cast) {
             const { payload } = msg as GenCastMsg;
             try {
-              const result = await callbacks.handle_cast(payload, state, me);
+              const proc = sys.getProcess(me);
+              const timeout = proc?.execTimeout ?? 0;
+              const handler = callbacks.handle_cast(payload, state, me);
+              const result = timeout > 0
+                ? await Promise.race([
+                    handler,
+                    new Promise<never>((_, rej) =>
+                      setTimeout(() => rej(new TimeoutError('execution timeout')), timeout),
+                    ),
+                  ])
+                : await handler;
               if (result) state = result.state;
-            } catch (_) {}
+            } catch (err) {
+              if (err instanceof TimeoutError && err.message === 'execution timeout') {
+                const proc = sys.getProcess(me);
+                if (proc) {
+                  proc.execTimeoutCount++;
+                  console.error(
+                    `[actojs] execution timeout in ${me} (${proc.execTimeoutCount})`,
+                  );
+                  if (proc.execTimeoutCount >= 3) {
+                    Proc.exit(me, 'too_many_exec_timeouts');
+                    return;
+                  }
+                }
+              }
+            }
+            await sys.yieldIfNeeded(me);
             continue;
           }
 
@@ -134,6 +190,8 @@ export async function startGenServer<S>(
             if (result) state = result.state;
           } catch (_) {}
         }
+
+        await sys.yieldIfNeeded(me);
       }
     };
 

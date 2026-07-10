@@ -79,6 +79,10 @@ export function getProcessInfo(pid: PID): ProcessInfo | null {
   return ActorSystem.current.getProcessInfo(pid);
 }
 
+export function yieldIfNeeded(pid: PID): Promise<void> {
+  return ActorSystem.current.yieldIfNeeded(pid);
+}
+
 export function runWithPid<T>(pid: PID, fn: () => T): T {
   return ActorSystem.current.runWithPid(pid, fn);
 }

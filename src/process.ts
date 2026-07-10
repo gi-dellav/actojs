@@ -1,22 +1,39 @@
 // acto/process — Low-level process primitives.
 // Web runtime: cooperative event-loop scheduler.
 
-import type { PID, Ref, Dest, SpawnOpt, ProcessInfo } from './types';
+import type { PID, Ref, Dest, SpawnOpt, SpawnOptions, ProcessLimits, ProcessInfo } from './types';
 import { ActorSystem } from './system';
 import * as M from './mailbox';
 
 export { TimeoutError } from './system';
+export type { ProcessLimits, SpawnOptions } from './types';
 
 // ---- spawn ----------------------------------------------------------------
 
-export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[]): PID {
+export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[] | SpawnOptions): PID {
   const sys = ActorSystem.current;
   const pid = sys.generatePid();
   const proc = sys.createProcess(pid);
   sys.registerProcess(pid, proc);
 
-  const link = opts?.includes('link') ?? false;
-  const monitor = opts?.includes('monitor') ?? false;
+  // Parse opts: accept legacy SpawnOpt[] or new SpawnOptions object.
+  let link = false;
+  let monitor = false;
+  if (Array.isArray(opts)) {
+    link = opts.includes('link');
+    monitor = opts.includes('monitor');
+  } else if (opts && typeof opts === 'object') {
+    link = opts.link ?? false;
+    monitor = opts.monitor ?? false;
+    // Apply per-process resource limits on top of system defaults.
+    const limits: ProcessLimits | undefined = opts.limits;
+    if (limits) {
+      if (limits.messageBudget != null) proc.messageBudget = limits.messageBudget;
+      if (limits.maxMailboxSize != null) proc.maxMailboxSize = limits.maxMailboxSize;
+      if (limits.execTimeout != null) proc.execTimeout = limits.execTimeout;
+      if (limits.maxMemory != null) proc.maxMemory = limits.maxMemory;
+    }
+  }
   const caller = sys.getCurrentPid();
 
   if (link && caller) {
@@ -171,14 +188,35 @@ export function demonitor(ref: Ref): void {
 
 // ---- flag -----------------------------------------------------------------
 
-export function flag(flag: string, value: boolean): boolean {
+export function flag(flag: string, value: unknown): unknown {
   const caller = M.getCurrentPid();
   if (!caller) throw new Error('flag() called outside of a process');
   const proc = M.getProcess(caller);
   if (!proc) throw new Error('process not found');
   if (flag === 'trap_exit') {
     const prev = proc.trapExit;
-    proc.trapExit = value;
+    proc.trapExit = !!value;
+    return prev;
+  }
+  // Fault-isolation flags: return the previous numeric value.
+  if (flag === 'message_budget') {
+    const prev = proc.messageBudget;
+    proc.messageBudget = Number(value) || 0;
+    return prev;
+  }
+  if (flag === 'max_mailbox_size') {
+    const prev = proc.maxMailboxSize;
+    proc.maxMailboxSize = Number(value) || 0;
+    return prev;
+  }
+  if (flag === 'exec_timeout') {
+    const prev = proc.execTimeout;
+    proc.execTimeout = Number(value) || 0;
+    return prev;
+  }
+  if (flag === 'max_memory') {
+    const prev = proc.maxMemory;
+    proc.maxMemory = Number(value) || 0;
     return prev;
   }
   return false;

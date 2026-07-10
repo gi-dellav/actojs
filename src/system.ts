@@ -36,6 +36,19 @@ export interface ProcessState {
   processDict: Map<string, unknown>;
   registeredName: string | null;
   recvTimer?: ReturnType<typeof setTimeout>;
+  // --- fault-isolation limits (0 = unlimited / disabled) ---
+  // Max messages processed before yielding to the event loop.
+  messageBudget: number;
+  // Max mailbox items; overflow triggers a SYSTEM alert and drops messages.
+  maxMailboxSize: number;
+  // Per handle_call/handle_cast timeout in milliseconds.
+  execTimeout: number;
+  // Max RSS memory in bytes; checked at yield points.
+  maxMemory: number;
+  // Running counter incremented every processed message; reset on yield.
+  messageCount: number;
+  // How many execution timeouts this process has accumulated.
+  execTimeoutCount: number;
 }
 
 export interface PendingCall {
@@ -72,7 +85,41 @@ export class ActorSystem {
   timers: Map<Ref, ReturnType<typeof setTimeout>> = new Map();
   onExit: OnExitHandler | null = null;
 
+  // System-wide defaults for process resource limits.
+  // Individual processes override these via SpawnOptions.limits or Process.flag().
+  // 0 = unlimited / disabled.
+  defaultMessageBudget = 100;   // yield every 100 messages
+  defaultMaxMailboxSize = 0;    // unlimited (backward-compatible)
+  defaultExecTimeout = 0;       // no timeout (backward-compatible)
+  defaultMaxMemory = 0;         // no limit (backward-compatible)
+
   private static _default: ActorSystem | null = null;
+
+  // Whether process.memoryUsage() is available (Node, Bun, Deno).
+  // False in browsers where process is undefined.
+  private static _memApi: boolean | null = null;
+  static get hasMemoryAPI(): boolean {
+    if (ActorSystem._memApi === null) {
+      try {
+        ActorSystem._memApi =
+          typeof process !== 'undefined' &&
+          typeof (process as unknown as Record<string, unknown>).memoryUsage === 'function';
+      } catch {
+        ActorSystem._memApi = false;
+      }
+    }
+    return ActorSystem._memApi;
+  }
+
+  // Calls process.memoryUsage() if available; returns null on web targets.
+  static getMemoryUsage(): { rss: number; heapTotal: number; heapUsed: number; external: number } | null {
+    if (!ActorSystem.hasMemoryAPI) return null;
+    try {
+      return (process as unknown as { memoryUsage(): { rss: number; heapTotal: number; heapUsed: number; external: number } }).memoryUsage();
+    } catch {
+      return null;
+    }
+  }
 
   constructor(name?: string) {
     this.name = name ?? '';
@@ -104,6 +151,12 @@ export class ActorSystem {
       exitReason: null,
       processDict: new Map(),
       registeredName: null,
+      messageBudget: this.defaultMessageBudget,
+      maxMailboxSize: this.defaultMaxMailboxSize,
+      execTimeout: this.defaultExecTimeout,
+      maxMemory: this.defaultMaxMemory,
+      messageCount: 0,
+      execTimeoutCount: 0,
     };
   }
 
@@ -164,6 +217,31 @@ export class ActorSystem {
     const proc = this.processes.get(pid);
     if (!proc) return;
     if (proc.status === 'exited' || proc.status === 'exiting') return;
+
+    // Mailbox overflow guard — skip for SYSTEM messages to avoid recursion.
+    const isSystem = msg != null && typeof msg === 'object' && (msg as Record<string, unknown>).type === 'SYSTEM';
+    if (!isSystem && proc.maxMailboxSize > 0 && proc.mailbox.length >= proc.maxMailboxSize) {
+      const overflowMsg = {
+        type: 'SYSTEM',
+        subtype: 'mailbox_overflow',
+        size: proc.mailbox.length,
+        limit: proc.maxMailboxSize,
+        droppedType: typeof msg,
+      };
+      // Wake a waiting receiver directly; otherwise push (one-time overage).
+      if (proc.recvResolve) {
+        if (proc.recvTimer) {
+          clearTimeout(proc.recvTimer);
+          proc.recvTimer = undefined;
+        }
+        const resolve = proc.recvResolve;
+        proc.recvResolve = null;
+        resolve(overflowMsg);
+      } else {
+        proc.mailbox.push(overflowMsg);
+      }
+      return;
+    }
 
     if (proc.recvTimer) {
       clearTimeout(proc.recvTimer);
@@ -270,6 +348,12 @@ export class ActorSystem {
     return {
       status: proc.status,
       messageQueueLength: this.getMailboxLength(pid),
+      maxMailboxSize: proc.maxMailboxSize,
+      messageBudget: proc.messageBudget,
+      messageCount: proc.messageCount,
+      execTimeout: proc.execTimeout,
+      execTimeoutCount: proc.execTimeoutCount,
+      maxMemory: proc.maxMemory,
       links: Array.from(proc.links),
       monitors: Array.from(proc.monitors.entries()).map(([ref, p]) => ({ ref, pid: p })),
       monitoredBy: Array.from(proc.monitoredBy.entries()).map(([p, refs]) => ({ pid: p, ref: refs })),
@@ -279,6 +363,38 @@ export class ActorSystem {
   }
 
   // ---- PID context tracking ----------------------------------------------
+
+  // Yield to the event loop when the message budget is exhausted,
+  // then check the process memory usage against its limit.
+  // Called by the GenServer receive loop after each message.
+  async yieldIfNeeded(pid: PID): Promise<void> {
+    const proc = this.processes.get(pid);
+    if (!proc) return;
+
+    if (proc.messageBudget > 0) {
+      proc.messageCount++;
+      if (proc.messageCount < proc.messageBudget) return;
+      proc.messageCount = 0;
+    } else {
+      return; // unlimited budget, never force-yield
+    }
+
+    // Yield to the event loop so other actors get a turn.
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+    // Memory budget check at every yield point.
+    if (proc.maxMemory > 0) {
+      const mem = ActorSystem.getMemoryUsage();
+      if (mem && mem.rss > proc.maxMemory) {
+        this.deliverMessage(pid, {
+          type: 'SYSTEM',
+          subtype: 'memory_limit',
+          usage: mem.rss,
+          limit: proc.maxMemory,
+        });
+      }
+    }
+  }
 
   runWithPid<T>(pid: PID, fn: () => T): T {
     this.pidStack.push(pid);

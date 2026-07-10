@@ -3,6 +3,8 @@
 // ponytail: pluggable runtimes for Node/Bun/Deno true parallelism.
 
 export { ActorSystem } from './system';
+import { ActorSystem } from './system';
+export type { ProcessLimits, SpawnOptions } from './types';
 
 export interface Runtime {
   name: string;
@@ -20,4 +22,10 @@ export function setRuntime(rt: Runtime): void {
 
 export function getRuntime(): Runtime {
   return currentRuntime;
+}
+
+// Whether process.memoryUsage() is available (Node, Bun, Deno).
+// False in browsers.
+export function hasMemoryAPI(): boolean {
+  return ActorSystem.hasMemoryAPI;
 }

@@ -6,6 +6,37 @@ export type Ref = symbol;
 export type Dest = PID | string; // PID or registered name
 export type SpawnOpt = 'link' | 'monitor';
 
+// Per-process resource limits for fault isolation.
+// Set at spawn() time or via Process.flag() at runtime.
+// All fields default to 0 (unlimited / disabled).
+export interface ProcessLimits {
+  // Maximum messages to process before yielding to the event loop.
+  // A yield point lets other actors run and triggers a memory check.
+  // 0 disables the budget — the actor yields only on await points.
+  messageBudget?: number;
+  // Maximum mailbox items. When exceeded, incoming messages are
+  // dropped and a SYSTEM alert is delivered instead.
+  // 0 = unlimited (default).
+  maxMailboxSize?: number;
+  // Per handle_call/handle_cast timeout in milliseconds.
+  // When exceeded, the caller gets an error and the process
+  // accumulates a timeout counter. 3 timeouts = process exit.
+  // 0 = no timeout (default).
+  execTimeout?: number;
+  // Maximum RSS memory in bytes for this process. Checked at
+  // yield points. When exceeded, a SYSTEM alert is delivered.
+  // Requires process.memoryUsage() (Node / Bun). Ignored in browsers.
+  // 0 = no limit (default).
+  maxMemory?: number;
+}
+
+// Spawn options object (alternative to SpawnOpt[]).
+export interface SpawnOptions {
+  link?: boolean;
+  monitor?: boolean;
+  limits?: ProcessLimits;
+}
+
 export type Module = Record<string, unknown>;
 export type MFA = [Module, string, unknown[]]; // [module, functionName, args]
 
@@ -19,6 +50,12 @@ export interface DownMessage {
 export interface ProcessInfo {
   status: 'running' | 'alive' | 'exiting' | 'exited';
   messageQueueLength: number;
+  maxMailboxSize: number;
+  messageBudget: number;
+  messageCount: number;
+  execTimeout: number;
+  execTimeoutCount: number;
+  maxMemory: number;
   links: PID[];
   monitors: { ref: Ref; pid: PID }[];
   monitoredBy: { pid: PID; ref: Ref[] }[];
