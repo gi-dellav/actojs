@@ -10,8 +10,10 @@ export type { ProcessLimits, SpawnOptions } from './types';
 
 // ---- spawn ----------------------------------------------------------------
 
-// Spawn a new process running the given function asynchronously.
-// Supports link/monitor options and per-process resource limits.
+/**
+ * Spawn a new process running the given function asynchronously.
+ * Supports link/monitor options and per-process resource limits.
+ */
 export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[] | SpawnOptions): PID {
   const sys = ActorSystem.current;
   const pid = sys.generatePid();
@@ -86,14 +88,14 @@ export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[] | SpawnO
   return pid;
 }
 
-// Spawn a new process and link it to the caller.
+/** Spawn a new process and link it to the caller. */
 export function spawn_link(fn: () => void): PID {
   return spawn(fn, ['link']);
 }
 
 // ---- send -----------------------------------------------------------------
 
-// Deliver a message to a destination, resolving registered names to PIDs.
+/** Deliver a message to a destination, resolving registered names to PIDs. */
 export function send(dest: Dest, msg: unknown): void {
   if (typeof dest === 'string') {
     // Could be a PID or a registered name
@@ -109,7 +111,7 @@ export function send(dest: Dest, msg: unknown): void {
 
 // ---- self -----------------------------------------------------------------
 
-// Return the PID of the currently executing process. Throws if called outside a process.
+/** Return the PID of the currently executing process. Throws if called outside a process. */
 export function self(): PID {
   const pid = M.getCurrentPid();
   if (!pid) throw new Error('self() called outside of a process');
@@ -118,7 +120,7 @@ export function self(): PID {
 
 // ---- alive? ---------------------------------------------------------------
 
-// Check whether a process is still alive (not exited or exiting).
+/** Check whether a process is still alive (not exited or exiting). */
 export function alive(pid: PID): boolean {
   const proc = M.getProcess(pid);
   return proc != null && proc.status !== 'exited' && proc.status !== 'exiting';
@@ -126,7 +128,7 @@ export function alive(pid: PID): boolean {
 
 // ---- exit -----------------------------------------------------------------
 
-// Force a process to exit with the given reason. Triggers the full exit protocol.
+/** Force a process to exit with the given reason. Triggers the full exit protocol. */
 export function exit(pid: PID, reason: unknown): void {
   const proc = M.getProcess(pid);
   if (proc && proc.status !== 'exited' && proc.status !== 'exiting') {
@@ -138,7 +140,7 @@ export function exit(pid: PID, reason: unknown): void {
 
 // ---- link / unlink --------------------------------------------------------
 
-// Establish a bidirectional link between the caller and the target process.
+/** Establish a bidirectional link between the caller and the target process. */
 export function link(pid: PID, callerPid?: PID): void {
   const caller = callerPid ?? M.getCurrentPid();
   if (!caller) throw new Error('link() called outside of a process');
@@ -150,7 +152,7 @@ export function link(pid: PID, callerPid?: PID): void {
   }
 }
 
-// Remove a link between the caller and the target process.
+/** Remove a link between the caller and the target process. */
 export function unlink(pid: PID): void {
   const caller = M.getCurrentPid();
   if (!caller) throw new Error('unlink() called outside of a process');
@@ -162,7 +164,7 @@ export function unlink(pid: PID): void {
 
 // ---- monitor / demonitor --------------------------------------------------
 
-// Monitor a process. Returns a ref that can be pattern-matched on DOWN messages.
+/** Monitor a process. Returns a ref that can be pattern-matched on DOWN messages. */
 export function monitor(pid: PID, callerPid?: PID): Ref {
   const caller = callerPid ?? M.getCurrentPid();
   if (!caller) throw new Error('monitor() called outside of a process');
@@ -179,7 +181,7 @@ export function monitor(pid: PID, callerPid?: PID): Ref {
   return ref;
 }
 
-// Stop monitoring a process by its monitor reference.
+/** Stop monitoring a process by its monitor reference. */
 export function demonitor(ref: Ref): void {
   const caller = M.getCurrentPid();
   if (!caller) throw new Error('demonitor() called outside of a process');
@@ -199,7 +201,7 @@ export function demonitor(ref: Ref): void {
 
 // ---- flag -----------------------------------------------------------------
 
-// Get or set process flags and resource limits (trap_exit, message_budget, etc.).
+/** Get or set process flags and resource limits (trap_exit, message_budget, etc.). */
 export function flag(flag: string, value: unknown): unknown {
   const caller = M.getCurrentPid();
   if (!caller) throw new Error('flag() called outside of a process');
@@ -236,7 +238,7 @@ export function flag(flag: string, value: unknown): unknown {
 
 // ---- name registry --------------------------------------------------------
 
-// Register a process under a human-readable name for later lookup via whereis.
+/** Register a process under a human-readable name for later lookup via whereis. */
 export function register(pid: PID, name: string, callerPid?: PID): void {
   const caller = callerPid ?? M.getCurrentPid();
   if (!caller) throw new Error('register() called outside of a process');
@@ -249,7 +251,7 @@ export function register(pid: PID, name: string, callerPid?: PID): void {
   proc.registeredName = name;
 }
 
-// Remove a name from the registry and clear it from the owning process.
+/** Remove a name from the registry and clear it from the owning process. */
 export function unregister(name: string): void {
   M.unregisterName(name);
   // Also clear the process's registered name
@@ -262,28 +264,28 @@ export function unregister(name: string): void {
   }
 }
 
-// Look up a PID by its registered name, or null if not found.
+/** Look up a PID by its registered name, or null if not found. */
 export function whereis(name: string): PID | null {
   return M.whereisName(name);
 }
 
 // ---- list -----------------------------------------------------------------
 
-// Return the PIDs of all currently alive processes in the system.
+/** Return the PIDs of all currently alive processes in the system. */
 export function list(): PID[] {
   return M.allPids().filter(pid => alive(pid));
 }
 
 // ---- sleep ----------------------------------------------------------------
 
-// Suspend the current process for the given number of milliseconds.
+/** Suspend the current process for the given number of milliseconds. */
 export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ---- send_after / cancel_timer --------------------------------------------
 
-// Schedule a message to be delivered after the given delay. Returns a timer reference.
+/** Schedule a message to be delivered after the given delay. Returns a timer reference. */
 export function send_after(dest: Dest, msg: unknown, ms: number): Ref {
   const sys = ActorSystem.current;
   const ref: Ref = Symbol('timer');
@@ -295,7 +297,7 @@ export function send_after(dest: Dest, msg: unknown, ms: number): Ref {
   return ref;
 }
 
-// Cancel a scheduled timer by its reference.
+/** Cancel a scheduled timer by its reference. */
 export function cancel_timer(ref: Ref): void {
   const sys = ActorSystem.current;
   const handle = sys.timers.get(ref);
@@ -307,14 +309,14 @@ export function cancel_timer(ref: Ref): void {
 
 // ---- info -----------------------------------------------------------------
 
-// Return a snapshot of public information for the given process.
+/** Return a snapshot of public information for the given process. */
 export function info(pid: PID): ProcessInfo | null {
   return M.getProcessInfo(pid);
 }
 
 // ---- process dictionary ---------------------------------------------------
 
-// Read a value from the current process's dictionary.
+/** Read a value from the current process's dictionary. */
 export function get(key: string): unknown {
   const caller = M.getCurrentPid();
   if (!caller) throw new Error('get() called outside of a process');
@@ -323,7 +325,7 @@ export function get(key: string): unknown {
   return proc.processDict.get(key);
 }
 
-// Store a value in the current process's dictionary. Returns the previous value.
+/** Store a value in the current process's dictionary. Returns the previous value. */
 export function put(key: string, value: unknown): unknown {
   const caller = M.getCurrentPid();
   if (!caller) throw new Error('put() called outside of a process');
@@ -334,7 +336,7 @@ export function put(key: string, value: unknown): unknown {
   return prev;
 }
 
-// Remove a key from the current process's dictionary. Returns the previous value.
+/** Remove a key from the current process's dictionary. Returns the previous value. */
 export function deleteKey(key: string): unknown {
   const caller = M.getCurrentPid();
   if (!caller) throw new Error('delete() called outside of a process');
@@ -347,7 +349,9 @@ export function deleteKey(key: string): unknown {
 
 // ---- receive (internal, for GenServer-style loops) ------------------------
 
-// Block the current process until a message arrives in its mailbox, with optional timeout.
+/**
+ * Block the current process until a message arrives in its mailbox, with optional timeout.
+ */
 export function receive(timeout?: number): Promise<unknown> {
   const caller = M.getCurrentPid();
   if (!caller) return Promise.reject(new Error('receive() called outside of a process'));

@@ -35,8 +35,10 @@ const DEFAULT_MAX_SECONDS = 5;
 
 // ---- start_link -----------------------------------------------------------
 
-// Start a dynamic supervisor that manages children spawned at runtime.
-// Only supports the one_for_one restart strategy.
+/**
+ * Start a dynamic supervisor that manages children spawned at runtime.
+ * Only supports the one_for_one restart strategy.
+ */
 export async function start_link(
   optsOrModule?: SupervisorInitOptions | DynamicSupervisorModule,
   initArg?: unknown,
@@ -200,7 +202,7 @@ async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnSt
 
 // ---- init -----------------------------------------------------------------
 
-// Build a SupervisorSpec for module-based dynamic supervisors.
+/** Build a SupervisorSpec for module-based dynamic supervisors. */
 export function init(opts: SupervisorInitOptions = { strategy: 'one_for_one' }): SupervisorSpec {
   return {
     children: [],
@@ -214,12 +216,12 @@ export function init(opts: SupervisorInitOptions = { strategy: 'one_for_one' }):
 
 // ---- public API -----------------------------------------------------------
 
-// Spawn a new child under the dynamic supervisor at runtime.
+/** Spawn a new child under the dynamic supervisor at runtime. */
 export function start_child(sup: PID, spec: ChildSpec, timeout?: number): Promise<OnStartChild> {
   return GS.genCall(sup, { type: 'start_child', payload: spec }, timeout) as Promise<OnStartChild>;
 }
 
-// Stop a child by its PID and remove it from the supervisor.
+/** Stop a child by its PID and remove it from the supervisor. */
 export function terminate_child(
   sup: PID,
   pid: PID,
@@ -228,17 +230,17 @@ export function terminate_child(
   return GS.genCall(sup, { type: 'terminate_child', payload: pid }, timeout) as Promise<void | { error: string }>;
 }
 
-// Return counts of specs, active children, supervisors, and workers.
+/** Return counts of specs, active children, supervisors, and workers. */
 export function count_children(sup: PID, timeout?: number): Promise<Counts> {
   return GS.genCall(sup, { type: 'count_children', payload: null }, timeout) as Promise<Counts>;
 }
 
-// Return information about all alive children managed by the supervisor.
+/** Return information about all alive children managed by the supervisor. */
 export function which_children(sup: PID, timeout?: number): Promise<ChildInfo[]> {
   return GS.genCall(sup, { type: 'which_children', payload: null }, timeout) as Promise<ChildInfo[]>;
 }
 
-// Gracefully shut down the dynamic supervisor and all its children.
+/** Gracefully shut down the dynamic supervisor and all its children. */
 export async function stop(sup: PID, reason?: unknown, timeout?: number): Promise<void> {
   await GS.genCall(sup, { type: 'stop', payload: { reason } }, timeout);
 }

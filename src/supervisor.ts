@@ -46,8 +46,10 @@ function normalizeSpec(spec: ChildSpec): ChildSpec {
 
 // ---- start_link (static children) -----------------------------------------
 
-// Start a supervisor process that manages static children with the given restart strategy.
-// Accepts either a direct list of ChildSpecs or a module with an init() method.
+/**
+ * Start a supervisor process that manages static children with the given restart strategy.
+ * Accepts either a direct list of ChildSpecs or a module with an init() method.
+ */
 export async function start_link(
   childrenOrModule: ChildSpec[] | SupervisorModule,
   initArgOrOpts?: unknown,
@@ -291,7 +293,7 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
 
 // ---- init (for module-based supervisors) ----------------------------------
 
-// Build a SupervisorSpec for module-based supervisors from child specs and options.
+/** Build a SupervisorSpec for module-based supervisors from child specs and options. */
 export function init(children: ChildSpec[], opts: SupervisorInitOptions = { strategy: 'one_for_one' }): SupervisorSpec {
   return {
     children,
@@ -305,7 +307,7 @@ export function init(children: ChildSpec[], opts: SupervisorInitOptions = { stra
 
 // ---- child_spec -----------------------------------------------------------
 
-// Build a ChildSpec from a module object, calling child_spec() if available.
+/** Build a ChildSpec from a module object, calling child_spec() if available. */
 export function child_spec(
   moduleOrSpec: ChildSpec | Record<string, unknown>,
   overrides?: Partial<ChildSpec>,
@@ -325,22 +327,22 @@ export function child_spec(
 
 // ---- query functions (for external callers) -------------------------------
 
-// Return counts of specs, active children, supervisors, and workers.
+/** Return counts of specs, active children, supervisors, and workers. */
 export function count_children(sup: PID, timeout?: number): Promise<Counts> {
   return GS.genCall(sup, { type: 'count_children', payload: null }, timeout) as Promise<Counts>;
 }
 
-// Return information about all alive children managed by the supervisor.
+/** Return information about all alive children managed by the supervisor. */
 export function which_children(sup: PID, timeout?: number): Promise<ChildInfo[]> {
   return GS.genCall(sup, { type: 'which_children', payload: null }, timeout) as Promise<ChildInfo[]>;
 }
 
-// Dynamically add a new child to the supervisor at runtime.
+/** Dynamically add a new child to the supervisor at runtime. */
 export function start_child(sup: PID, spec: ChildSpec, timeout?: number): Promise<OnStartChild> {
   return GS.genCall(sup, { type: 'start_child', payload: spec }, timeout) as Promise<OnStartChild>;
 }
 
-// Stop a child by its spec id, respecting the shutdown value from its ChildSpec.
+/** Stop a child by its spec id, respecting the shutdown value from its ChildSpec. */
 export function terminate_child(
   sup: PID,
   childId: string,
@@ -349,7 +351,7 @@ export function terminate_child(
   return GS.genCall(sup, { type: 'terminate_child', payload: childId }, timeout) as Promise<void | { error: string }>;
 }
 
-// Remove a child's spec from the supervisor. Fails if the child is still running.
+/** Remove a child's spec from the supervisor. Fails if the child is still running. */
 export function delete_child(
   sup: PID,
   childId: string,
@@ -358,12 +360,12 @@ export function delete_child(
   return GS.genCall(sup, { type: 'delete_child', payload: childId }, timeout) as Promise<void | { error: string }>;
 }
 
-// Stop and restart a child by its spec id.
+/** Stop and restart a child by its spec id. */
 export function restart_child(sup: PID, childId: string, timeout?: number): Promise<OnStartChild> {
   return GS.genCall(sup, { type: 'restart_child', payload: childId }, timeout) as Promise<OnStartChild>;
 }
 
-// Gracefully shut down the supervisor and all its children.
+/** Gracefully shut down the supervisor and all its children. */
 export async function stop(sup: PID, reason?: unknown, timeout?: number): Promise<void> {
   await GS.genCall(sup, { type: 'stop', payload: { reason } }, timeout);
 }

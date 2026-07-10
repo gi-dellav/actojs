@@ -23,8 +23,10 @@ export type OnExitHandler = (report: ExitReport) => void;
 
 // ---- ProcessState (moved from mailbox.ts) --------------------------------
 
-// Runtime state for a single process managed by the actor system.
-// Tracks the mailbox, linkage graph, resource limits, and lifecycle status.
+/**
+ * Runtime state for a single process managed by the actor system.
+ * Tracks the mailbox, linkage graph, resource limits, and lifecycle status.
+ */
 export interface ProcessState {
   pid: PID;
   mailbox: unknown[];
@@ -53,8 +55,10 @@ export interface ProcessState {
   execTimeoutCount: number;
 }
 
-// Deferred call ticket with optional timeout timer.
-// Stored in the pendingCalls map keyed by a symbol reference.
+/**
+ * Deferred call ticket with optional timeout timer.
+ * Stored in the pendingCalls map keyed by a symbol reference.
+ */
 export interface PendingCall {
   resolve: (v: unknown) => void;
   reject: (e: unknown) => void;
@@ -76,9 +80,11 @@ export interface From {
 
 let _current: ActorSystem | null = null;
 
-// ActorSystem: isolated actor universe.
-// Each ActorSystem owns its own process table, name registry, PID counter,
-// pending calls, task results, and timers. Systems are fully isolated.
+/**
+ * ActorSystem: isolated actor universe.
+ * Each ActorSystem owns its own process table, name registry, PID counter,
+ * pending calls, task results, and timers. Systems are fully isolated.
+ */
 export class ActorSystem {
   readonly name: string;
   readonly systemId: string;
@@ -128,7 +134,7 @@ export class ActorSystem {
     }
   }
 
-  // Construct a new isolated actor system with an optional human-readable name.
+  /** Construct a new isolated actor system with an optional human-readable name. */
   constructor(name?: string) {
     this.name = name ?? '';
     this.systemId = name ? name : '0';
@@ -136,7 +142,7 @@ export class ActorSystem {
 
   // ---- PID generation ----------------------------------------------------
 
-  // Generate a fresh, monotonically increasing PID scoped to this system.
+  /** Generate a fresh, monotonically increasing PID scoped to this system. */
   generatePid(): PID {
     const c = this.nextPidCounter++;
     if (this.systemId === '0') {
@@ -147,7 +153,7 @@ export class ActorSystem {
 
   // ---- Process helpers (delegated from mailbox.ts) -----------------------
 
-  // Create a new ProcessState with default limits inherited from the system.
+  /** Create a new ProcessState with default limits inherited from the system. */
   createProcess(pid: PID): ProcessState {
     return {
       pid,
@@ -170,38 +176,38 @@ export class ActorSystem {
     };
   }
 
-  // Look up a process by its PID. Returns undefined if not found.
+  /** Look up a process by its PID. Returns undefined if not found. */
   getProcess(pid: PID): ProcessState | undefined {
     return this.processes.get(pid);
   }
 
-  // Return the PID of the currently executing process, or null if outside a process.
+  /** Return the PID of the currently executing process, or null if outside a process. */
   getCurrentPid(): PID | null {
     if (this.pidStack.length === 0) return null;
     return this.pidStack[this.pidStack.length - 1] ?? null;
   }
 
-  // Push a PID onto the call stack, marking it as the current process.
+  /** Push a PID onto the call stack, marking it as the current process. */
   pushPid(pid: PID): void {
     this.pidStack.push(pid);
   }
 
-  // Pop the top PID off the call stack, restoring the previous process context.
+  /** Pop the top PID off the call stack, restoring the previous process context. */
   popPid(): void {
     this.pidStack.pop();
   }
 
-  // Clear the entire PID call stack. Used when unwinding after an error.
+  /** Clear the entire PID call stack. Used when unwinding after an error. */
   clearPidStack(): void {
     this.pidStack.length = 0;
   }
 
-  // Insert a process into the system's process table.
+  /** Insert a process into the system's process table. */
   registerProcess(pid: PID, proc: ProcessState): void {
     this.processes.set(pid, proc);
   }
 
-  // Remove a process from the table, also cleaning up its registered name if any.
+  /** Remove a process from the table, also cleaning up its registered name if any. */
   deregisterProcess(pid: PID): void {
     const proc = this.processes.get(pid);
     if (proc && proc.registeredName) {
@@ -210,32 +216,34 @@ export class ActorSystem {
     this.processes.delete(pid);
   }
 
-  // Return every PID currently in the process table (including exited ones).
+  /** Return every PID currently in the process table (including exited ones). */
   allPids(): PID[] {
     return Array.from(this.processes.keys());
   }
 
   // ---- Name registry -----------------------------------------------------
 
-  // Associate a human-readable name with a PID for later lookup.
+  /** Associate a human-readable name with a PID for later lookup. */
   registerName(name: string, pid: PID): void {
     this.nameRegistry.set(name, pid);
   }
 
-  // Remove a name from the registry.
+  /** Remove a name from the registry. */
   unregisterName(name: string): void {
     this.nameRegistry.delete(name);
   }
 
-  // Resolve a registered name to its PID, or null if not found.
+  /** Resolve a registered name to its PID, or null if not found. */
   whereisName(name: string): PID | null {
     return this.nameRegistry.get(name) ?? null;
   }
 
   // ---- Message delivery --------------------------------------------------
 
-  // Push a message into a process's mailbox, waking a blocked receiver if present.
-  // Enforces mailbox size limits and skips delivery to exited processes.
+  /**
+   * Push a message into a process's mailbox, waking a blocked receiver if present.
+   * Enforces mailbox size limits and skips delivery to exited processes.
+   */
   deliverMessage(pid: PID, msg: unknown): void {
     const proc = this.processes.get(pid);
     if (!proc) return;
@@ -280,8 +288,10 @@ export class ActorSystem {
     }
   }
 
-  // Block the current process until a message arrives, with an optional timeout.
-  // Returns immediately if the mailbox already contains messages.
+  /**
+   * Block the current process until a message arrives, with an optional timeout.
+   * Returns immediately if the mailbox already contains messages.
+   */
   receiveMessage(pid?: PID, timeout?: number): Promise<unknown> {
     const effectivePid = pid ?? this.getCurrentPid();
     if (!effectivePid) return Promise.reject(new Error('not inside a process'));
@@ -305,7 +315,7 @@ export class ActorSystem {
     });
   }
 
-  // Return the number of messages waiting in a process's mailbox.
+  /** Return the number of messages waiting in a process's mailbox. */
   getMailboxLength(pid: PID): number {
     const proc = this.processes.get(pid);
     return proc ? proc.mailbox.length + (proc.recvResolve ? 0 : 0) : 0;
@@ -313,7 +323,7 @@ export class ActorSystem {
 
   // ---- Exit handling -----------------------------------------------------
 
-  // Perform the full exit protocol: notify links and monitors, then deregister.
+  /** Perform the full exit protocol: notify links and monitors, then deregister. */
   handleExit(proc: ProcessState): void {
     proc.status = 'exited';
 
@@ -369,7 +379,7 @@ export class ActorSystem {
     this.deregisterProcess(proc.pid);
   }
 
-  // Build a snapshot of a process's public information for inspection.
+  /** Build a snapshot of a process's public information for inspection. */
   getProcessInfo(pid: PID): ProcessInfo | null {
     const proc = this.processes.get(pid);
     if (!proc) return null;
@@ -424,8 +434,10 @@ export class ActorSystem {
     }
   }
 
-  // Execute a function with the given PID on the call stack, restoring it after.
-  // Handles both synchronous and async functions correctly.
+  /**
+   * Execute a function with the given PID on the call stack, restoring it after.
+   * Handles both synchronous and async functions correctly.
+   */
   runWithPid<T>(pid: PID, fn: () => T): T {
     this.pidStack.push(pid);
     try {
@@ -445,7 +457,7 @@ export class ActorSystem {
 
   // ---- Static: current system --------------------------------------------
 
-  // The currently active actor system, or the default system if none was explicitly set.
+  /** The currently active actor system, or the default system if none was explicitly set. */
   static get current(): ActorSystem {
     if (!_current) {
       _current = ActorSystem.default;
@@ -453,12 +465,12 @@ export class ActorSystem {
     return _current!;
   }
 
-  // Set the active actor system for the current execution context.
+  /** Set the active actor system for the current execution context. */
   static set current(sys: ActorSystem) {
     _current = sys;
   }
 
-  // The lazily-created default system. Most single-system applications use this.
+  /** The lazily-created default system. Most single-system applications use this. */
   static get default(): ActorSystem {
     if (!ActorSystem._default) {
       ActorSystem._default = new ActorSystem();
@@ -466,8 +478,10 @@ export class ActorSystem {
     return ActorSystem._default;
   }
 
-  // Temporarily run a function within the context of a specific system.
-  // Restores the previously active system when done.
+  /**
+   * Temporarily run a function within the context of a specific system.
+   * Restores the previously active system when done.
+   */
   static run<T>(sys: ActorSystem, fn: () => T): T {
     const prev = _current;
     _current = sys;
