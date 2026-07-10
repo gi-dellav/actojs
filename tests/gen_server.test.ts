@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 import * as GS from '../src/gen_server';
 import * as Process from '../src/process';
 import * as M from '../src/mailbox';
+import { TimeoutError } from '../src/system';
 import { sleep } from './helpers';
 
 beforeEach(() => {
@@ -239,7 +240,7 @@ describe('gen_server', () => {
       const callPromise = GS.genCall(result.ok, { type: 'defer' }, 500);
 
       // It should eventually timeout
-      await expect(callPromise).rejects.toThrow('timeout');
+      await expect(callPromise).rejects.toThrow(TimeoutError);
     });
 
     test('GenServer.reply resolves a deferred call', async () => {

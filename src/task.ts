@@ -2,8 +2,10 @@
 // Web runtime: cooperative event-loop.
 
 import type { PID, Ref, TaskHandle } from './types';
-import { ActorSystem } from './system';
+import { ActorSystem, TimeoutError } from './system';
 import * as Proc from './process';
+
+export { TimeoutError } from './system';
 
 export function async<R>(fn: () => Promise<R>): TaskHandle<R> {
   const sys = ActorSystem.current;
@@ -33,7 +35,7 @@ export function async<R>(fn: () => Promise<R>): TaskHandle<R> {
   return { pid, ref };
 }
 
-export function await_<R>(task: TaskHandle<R>): Promise<R> {
+export function await_<R>(task: TaskHandle<R>, timeout?: number): Promise<R> {
   const sys = ActorSystem.current;
   const result = sys.taskResults.get(task.ref);
   if (!result) return Promise.reject(new Error('task not found'));
@@ -42,8 +44,20 @@ export function await_<R>(task: TaskHandle<R>): Promise<R> {
   if (result.status === 'error') return Promise.reject(result.error);
 
   return new Promise((resolve, reject) => {
-    (result as any)._resolve = resolve;
-    (result as any)._reject = reject;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (timeout != null) {
+      timer = setTimeout(() => {
+        reject(new TimeoutError('task await timed out'));
+      }, timeout);
+    }
+    (result as any)._resolve = (value: R) => {
+      if (timer) clearTimeout(timer);
+      resolve(value);
+    };
+    (result as any)._reject = (err: unknown) => {
+      if (timer) clearTimeout(timer);
+      reject(err);
+    };
   });
 }
 

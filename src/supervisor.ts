@@ -8,6 +8,7 @@ import type {
   DownMessage, Module,
 } from './types';
 import type { From } from './system';
+import { ActorSystem } from './system';
 import * as Proc from './process';
 import * as GS from './gen_server';
 
@@ -320,38 +321,40 @@ export function child_spec(
 
 // ---- query functions (for external callers) -------------------------------
 
-export function count_children(sup: PID): Promise<Counts> {
-  return GS.genCall(sup, { type: 'count_children', payload: null }) as Promise<Counts>;
+export function count_children(sup: PID, timeout?: number): Promise<Counts> {
+  return GS.genCall(sup, { type: 'count_children', payload: null }, timeout) as Promise<Counts>;
 }
 
-export function which_children(sup: PID): Promise<ChildInfo[]> {
-  return GS.genCall(sup, { type: 'which_children', payload: null }) as Promise<ChildInfo[]>;
+export function which_children(sup: PID, timeout?: number): Promise<ChildInfo[]> {
+  return GS.genCall(sup, { type: 'which_children', payload: null }, timeout) as Promise<ChildInfo[]>;
 }
 
-export function start_child(sup: PID, spec: ChildSpec): Promise<OnStartChild> {
-  return GS.genCall(sup, { type: 'start_child', payload: spec }) as Promise<OnStartChild>;
+export function start_child(sup: PID, spec: ChildSpec, timeout?: number): Promise<OnStartChild> {
+  return GS.genCall(sup, { type: 'start_child', payload: spec }, timeout) as Promise<OnStartChild>;
 }
 
 export function terminate_child(
   sup: PID,
   childId: string,
+  timeout?: number,
 ): Promise<void | { error: string }> {
-  return GS.genCall(sup, { type: 'terminate_child', payload: childId }) as Promise<void | { error: string }>;
+  return GS.genCall(sup, { type: 'terminate_child', payload: childId }, timeout) as Promise<void | { error: string }>;
 }
 
 export function delete_child(
   sup: PID,
   childId: string,
+  timeout?: number,
 ): Promise<void | { error: string }> {
-  return GS.genCall(sup, { type: 'delete_child', payload: childId }) as Promise<void | { error: string }>;
+  return GS.genCall(sup, { type: 'delete_child', payload: childId }, timeout) as Promise<void | { error: string }>;
 }
 
-export function restart_child(sup: PID, childId: string): Promise<OnStartChild> {
-  return GS.genCall(sup, { type: 'restart_child', payload: childId }) as Promise<OnStartChild>;
+export function restart_child(sup: PID, childId: string, timeout?: number): Promise<OnStartChild> {
+  return GS.genCall(sup, { type: 'restart_child', payload: childId }, timeout) as Promise<OnStartChild>;
 }
 
-export async function stop(sup: PID, reason?: unknown): Promise<void> {
-  await GS.genCall(sup, { type: 'stop', payload: { reason } });
+export async function stop(sup: PID, reason?: unknown, timeout?: number): Promise<void> {
+  await GS.genCall(sup, { type: 'stop', payload: { reason } }, timeout);
 }
 
 // ---- internal helpers -----------------------------------------------------
@@ -418,12 +421,28 @@ function checkRestartRate(s: SupervisorState): boolean {
 }
 
 async function applyRestartStrategy(s: SupervisorState, failedId: string, failedSpec: ChildSpec, failedIdx: number, supPid: PID): Promise<void> {
+  // Check significant flag
+  if (failedSpec.significant) {
+    s.isShuttingDown = true;
+    for (const [_, child] of s.children) {
+      Proc.exit(child.pid, 'shutdown');
+    }
+    Proc.exit(supPid, 'shutdown');
+    return;
+  }
+
   switch (s.strategy) {
     case 'one_for_one': {
+      const oldPid = s.children.get(failedId)?.pid;
       await restartChild(s, failedId, failedSpec, supPid);
+      const newChild = s.children.get(failedId);
+      if (oldPid && newChild && newChild.pid !== oldPid) {
+        sendRestartNotification(supPid, failedId, oldPid, newChild.pid);
+      }
       break;
     }
     case 'one_for_all': {
+      const oldPids = new Map<string, PID>();
       const allIds: string[] = [];
       for (const id of s.specs.keys()) {
         allIds.push(id);
@@ -431,34 +450,107 @@ async function applyRestartStrategy(s: SupervisorState, failedId: string, failed
       for (const id of allIds) {
         const child = s.children.get(id);
         if (child) {
-          Proc.exit(child.pid, 'shutdown');
+          oldPids.set(id, child.pid);
+          killChildWithGrace(child.pid, child.spec);
           s.children.delete(id);
         }
       }
       s.childOrder = [];
       for (const id of allIds) {
         const spec = s.specs.get(id);
-        if (spec) await restartChild(s, id, spec, supPid);
+        if (spec) {
+          await restartChild(s, id, spec, supPid);
+          const newChild = s.children.get(id);
+          const old = oldPids.get(id);
+          if (old && newChild && newChild.pid !== old) {
+            sendRestartNotification(supPid, id, old, newChild.pid);
+          }
+        }
       }
       break;
     }
     case 'rest_for_one': {
-      const toRestart: { id: string; spec: ChildSpec }[] = [];
-      toRestart.push({ id: failedId, spec: failedSpec });
-      for (const id of s.childOrder) {
+      const oldPids = new Map<string, PID>();
+      const afterIds: string[] = [];
+      let foundFailed = false;
+      for (const id of s.specs.keys()) {
+        if (!foundFailed) {
+          if (id === failedId) foundFailed = true;
+          continue;
+        }
+        afterIds.push(id);
+      }
+
+      // Restart failed child first
+      const oldFailedPid = s.children.get(failedId)?.pid;
+      await restartChild(s, failedId, failedSpec, supPid);
+      const newFailedChild = s.children.get(failedId);
+      if (oldFailedPid && newFailedChild && newFailedChild.pid !== oldFailedPid) {
+        sendRestartNotification(supPid, failedId, oldFailedPid, newFailedChild.pid);
+      }
+
+      // Then kill and restart all children after it
+      for (const id of afterIds) {
         const child = s.children.get(id);
         if (child) {
-          Proc.exit(child.pid, 'shutdown');
+          oldPids.set(id, child.pid);
+          killChildWithGrace(child.pid, child.spec);
           s.children.delete(id);
         }
-        const spec = s.specs.get(id);
-        if (spec) toRestart.push({ id, spec });
+        s.childOrder = s.childOrder.filter(oid => oid !== id);
       }
-      s.childOrder = [];
-      for (const { id, spec } of toRestart) {
-        await restartChild(s, id, spec, supPid);
+      for (const id of afterIds) {
+        const spec = s.specs.get(id);
+        if (spec) {
+          await restartChild(s, id, spec, supPid);
+          const newChild = s.children.get(id);
+          const old = oldPids.get(id);
+          if (old && newChild && newChild.pid !== old) {
+            sendRestartNotification(supPid, id, old, newChild.pid);
+          }
+        }
       }
       break;
+    }
+  }
+}
+
+function killChildWithGrace(pid: PID, spec: ChildSpec): void {
+  const shutdown = spec.shutdown ?? 5000;
+  if (shutdown === 'brutal_kill') {
+    Proc.exit(pid, 'killed');
+  } else if (shutdown === 'infinity') {
+    Proc.exit(pid, 'shutdown');
+  } else {
+    const ms = typeof shutdown === 'number' ? shutdown : 5000;
+    Proc.exit(pid, 'shutdown');
+    setTimeout(() => {
+      if (Proc.alive(pid)) {
+        Proc.exit(pid, 'killed');
+      }
+    }, ms);
+  }
+}
+
+function sendRestartNotification(supPid: PID, childId: string, oldPid: PID, newPid: PID): void {
+  const sys = ActorSystem.current;
+  const sup = sys.getProcess(supPid);
+  if (sup) {
+    for (const linkedPid of sup.links) {
+      sys.deliverMessage(linkedPid, {
+        type: 'RESTARTED',
+        childId,
+        oldPid,
+        newPid,
+      });
+    }
+    for (const monitorPid of sup.monitoredBy.keys()) {
+      sys.deliverMessage(monitorPid, {
+        type: 'RESTARTED',
+        childId,
+        oldPid,
+        newPid,
+      });
     }
   }
 }

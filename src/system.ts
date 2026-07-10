@@ -4,6 +4,23 @@
 
 import type { PID, Ref, ProcessInfo } from './types';
 
+export class TimeoutError extends Error {
+  constructor(message = 'timeout') {
+    super(message);
+    this.name = 'TimeoutError';
+  }
+}
+
+export interface ExitReport {
+  pid: PID;
+  reason: unknown;
+  registeredName: string | null;
+  timestamp: number;
+  links: PID[];
+}
+
+export type OnExitHandler = (report: ExitReport) => void;
+
 // ---- ProcessState (moved from mailbox.ts) --------------------------------
 
 export interface ProcessState {
@@ -18,6 +35,7 @@ export interface ProcessState {
   exitReason: unknown;
   processDict: Map<string, unknown>;
   registeredName: string | null;
+  recvTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface PendingCall {
@@ -52,6 +70,7 @@ export class ActorSystem {
   pendingCalls: Map<symbol, PendingCall> = new Map();
   taskResults: Map<Ref, TaskResult> = new Map();
   timers: Map<Ref, ReturnType<typeof setTimeout>> = new Map();
+  onExit: OnExitHandler | null = null;
 
   private static _default: ActorSystem | null = null;
 
@@ -146,6 +165,11 @@ export class ActorSystem {
     if (!proc) return;
     if (proc.status === 'exited' || proc.status === 'exiting') return;
 
+    if (proc.recvTimer) {
+      clearTimeout(proc.recvTimer);
+      proc.recvTimer = undefined;
+    }
+
     if (proc.recvResolve) {
       const resolve = proc.recvResolve;
       proc.recvResolve = null;
@@ -155,7 +179,7 @@ export class ActorSystem {
     }
   }
 
-  receiveMessage(pid?: PID): Promise<unknown> {
+  receiveMessage(pid?: PID, timeout?: number): Promise<unknown> {
     const effectivePid = pid ?? this.getCurrentPid();
     if (!effectivePid) return Promise.reject(new Error('not inside a process'));
 
@@ -166,8 +190,15 @@ export class ActorSystem {
       return Promise.resolve(proc.mailbox.shift());
     }
 
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
       proc.recvResolve = resolve;
+      if (timeout != null) {
+        proc.recvTimer = setTimeout(() => {
+          proc.recvResolve = null;
+          proc.recvTimer = undefined;
+          reject(new TimeoutError('receive timed out'));
+        }, timeout);
+      }
     });
   }
 
@@ -180,6 +211,22 @@ export class ActorSystem {
 
   handleExit(proc: ProcessState): void {
     proc.status = 'exited';
+
+    const report: ExitReport = {
+      pid: proc.pid,
+      reason: proc.exitReason,
+      registeredName: proc.registeredName,
+      timestamp: Date.now(),
+      links: Array.from(proc.links),
+    };
+
+    if (proc.exitReason !== 'normal' && proc.exitReason !== 'shutdown') {
+      console.error(`[actojs] Process ${proc.pid}${proc.registeredName ? ` (${proc.registeredName})` : ''} exited: ${String(proc.exitReason)}`);
+    }
+
+    if (this.onExit) {
+      try { this.onExit(report); } catch (_) {}
+    }
 
     // Notify linked processes
     for (const linkedPid of proc.links) {

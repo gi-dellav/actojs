@@ -63,8 +63,8 @@ export function deliverMessage(pid: PID, msg: unknown): void {
   ActorSystem.current.deliverMessage(pid, msg);
 }
 
-export function receiveMessage(pid?: PID): Promise<unknown> {
-  return ActorSystem.current.receiveMessage(pid);
+export function receiveMessage(pid?: PID, timeout?: number): Promise<unknown> {
+  return ActorSystem.current.receiveMessage(pid, timeout);
 }
 
 export function getMailboxLength(pid: PID): number {

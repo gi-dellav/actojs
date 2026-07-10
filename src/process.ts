@@ -5,6 +5,8 @@ import type { PID, Ref, Dest, SpawnOpt, ProcessInfo } from './types';
 import { ActorSystem } from './system';
 import * as M from './mailbox';
 
+export { TimeoutError } from './system';
+
 // ---- spawn ----------------------------------------------------------------
 
 export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[]): PID {
@@ -284,8 +286,11 @@ export function deleteKey(key: string): unknown {
 
 // ---- receive (internal, for GenServer-style loops) ------------------------
 
-export function receive(): Promise<unknown> {
+export function receive(timeout?: number): Promise<unknown> {
   const caller = M.getCurrentPid();
   if (!caller) return Promise.reject(new Error('receive() called outside of a process'));
+  if (timeout != null) {
+    return M.receiveMessage(undefined, timeout);
+  }
   return M.receiveMessage();
 }

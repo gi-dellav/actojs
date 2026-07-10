@@ -258,19 +258,21 @@ export function register(
   reg: PID,
   key: string,
   value: unknown,
+  timeout?: number,
 ): Promise<{ ok: PID } | { error: string }> {
-  return GS.genCall(reg, { type: 'register', payload: { key, value } }) as Promise<{ ok: PID } | { error: string }>;
+  return GS.genCall(reg, { type: 'register', payload: { key, value } }, timeout) as Promise<{ ok: PID } | { error: string }>;
 }
 
-export function unregister(reg: PID, key: string): Promise<void> {
-  return GS.genCall(reg, { type: 'unregister', payload: { key } }) as Promise<void>;
+export function unregister(reg: PID, key: string, timeout?: number): Promise<void> {
+  return GS.genCall(reg, { type: 'unregister', payload: { key } }, timeout) as Promise<void>;
 }
 
 export function lookup(
   reg: PID,
   key: string,
+  timeout?: number,
 ): Promise<{ pid: PID; value: unknown }[]> {
-  return GS.genCall(reg, { type: 'lookup', payload: { key } }) as Promise<{ pid: PID; value: unknown }[]>;
+  return GS.genCall(reg, { type: 'lookup', payload: { key } }, timeout) as Promise<{ pid: PID; value: unknown }[]>;
 }
 
 export function match(
@@ -278,8 +280,9 @@ export function match(
   key: string,
   pattern: unknown,
   guards?: (value: unknown) => boolean,
+  timeout?: number,
 ): Promise<{ pid: PID; value: unknown }[]> {
-  return GS.genCall(reg, { type: 'match', payload: { key, pattern, guards } }) as Promise<{ pid: PID; value: unknown }[]>;
+  return GS.genCall(reg, { type: 'match', payload: { key, pattern, guards } }, timeout) as Promise<{ pid: PID; value: unknown }[]>;
 }
 
 export function dispatch(
@@ -287,26 +290,28 @@ export function dispatch(
   key: string,
   callback: RegistryCallback,
   opts?: { limit?: number },
+  timeout?: number,
 ): Promise<void> {
-  return GS.genCall(reg, { type: 'dispatch', payload: { key, callback, opts } }) as Promise<void>;
+  return GS.genCall(reg, { type: 'dispatch', payload: { key, callback, opts } }, timeout) as Promise<void>;
 }
 
-export function keys(reg: PID, pid: PID): Promise<string[]> {
-  return GS.genCall(reg, { type: 'keys', payload: { pid } }) as Promise<string[]>;
+export function keys(reg: PID, pid: PID, timeout?: number): Promise<string[]> {
+  return GS.genCall(reg, { type: 'keys', payload: { pid } }, timeout) as Promise<string[]>;
 }
 
-export function values(reg: PID, key: string, pid: PID): Promise<unknown[]> {
-  return GS.genCall(reg, { type: 'values', payload: { key, pid } }) as Promise<unknown[]>;
+export function values(reg: PID, key: string, pid: PID, timeout?: number): Promise<unknown[]> {
+  return GS.genCall(reg, { type: 'values', payload: { key, pid } }, timeout) as Promise<unknown[]>;
 }
 
-export function count(reg: PID): Promise<number> {
-  return GS.genCall(reg, { type: 'count', payload: {} }) as Promise<number>;
+export function count(reg: PID, timeout?: number): Promise<number> {
+  return GS.genCall(reg, { type: 'count', payload: {} }, timeout) as Promise<number>;
 }
 
 export function update_value(
   reg: PID,
   key: string,
   fn: (value: unknown) => unknown,
+  timeout?: number,
 ): Promise<{ newValue: unknown; oldValue: unknown } | { error: string }> {
-  return GS.genCall(reg, { type: 'update_value', payload: { key, fn } }) as Promise<{ newValue: unknown; oldValue: unknown } | { error: string }>;
+  return GS.genCall(reg, { type: 'update_value', payload: { key, fn } }, timeout) as Promise<{ newValue: unknown; oldValue: unknown } | { error: string }>;
 }

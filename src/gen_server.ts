@@ -3,7 +3,7 @@
 // Web runtime: cooperative event-loop.
 
 import type { PID, Ref } from './types';
-import { ActorSystem, type From, type PendingCall } from './system';
+import { ActorSystem, type From, type PendingCall, TimeoutError } from './system';
 import * as Proc from './process';
 import * as M from './mailbox';
 
@@ -33,6 +33,11 @@ export interface GenServerCallbacks<S> {
   handle_cast?(msg: unknown, state: S, myPid: PID): { noreply: unknown; state: S } | Promise<{ noreply: unknown; state: S }>;
   handle_info?(msg: unknown, state: S, myPid: PID): { noreply: unknown; state: S } | Promise<{ noreply: unknown; state: S }>;
   terminate?(reason: unknown, state: S): void | Promise<void>;
+}
+
+export interface TerminateInfo {
+  reason: unknown;
+  exitType: 'stop' | 'exit' | 'shutdown';
 }
 
 // ---- start (async) -------------------------------------------------------
@@ -110,9 +115,13 @@ export async function startGenServer<S>(
 
           if (tagged.__gen_server__ === 'stop') {
             const { reason, __stop_ref } = msg as GenStopMsg;
+            Proc.put('__terminate_info__', { reason, exitType: 'stop' } satisfies TerminateInfo);
             try {
               await callbacks.terminate?.(reason, state);
-            } catch (_) {}
+            } catch (err) {
+              console.error(`[actojs] terminate error in ${me}: ${String(err)}`);
+            }
+            Proc.deleteKey('__terminate_info__');
             if (__stop_ref) resolvePending(__stop_ref, { ok: undefined });
             Proc.exit(me, reason ?? 'normal');
             return;
@@ -173,10 +182,10 @@ export function genCall(pid: PID, msg: unknown, timeout?: number): Promise<unkno
     reject = rej;
   });
   const pending: PendingCall = { resolve: resolve!, reject: reject! };
-  if (timeout) {
+  if (timeout != null) {
     pending.timer = setTimeout(() => {
       ActorSystem.current.pendingCalls.delete(ref);
-      reject!(new Error('timeout'));
+      reject!(new TimeoutError('genCall timed out'));
     }, timeout);
   }
   ActorSystem.current.pendingCalls.set(ref, pending);
@@ -197,13 +206,20 @@ export function reply(from: From, msg: unknown): void {
 
 // ---- stop ----------------------------------------------------------------
 
-export function genStop(pid: PID, reason?: unknown): Promise<void> {
+export function genStop(pid: PID, reason?: unknown, timeout?: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const ref: Ref = Symbol('gen_stop');
     const pending: PendingCall = { resolve: resolve as (v: unknown) => void, reject };
+    if (timeout != null) {
+      pending.timer = setTimeout(() => {
+        ActorSystem.current.pendingCalls.delete(ref);
+        reject(new TimeoutError('genStop timed out'));
+      }, timeout);
+    }
     ActorSystem.current.pendingCalls.set(ref, pending);
     Proc.send(pid, { __gen_server__: 'stop', reason, __stop_ref: ref });
     if (!Proc.alive(pid)) {
+      if (pending.timer) clearTimeout(pending.timer);
       ActorSystem.current.pendingCalls.delete(ref);
       resolve();
     }

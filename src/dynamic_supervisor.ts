@@ -47,6 +47,9 @@ export async function start_link(
     const mod = optsOrModule;
     if (typeof mod.init === 'function') {
       const spec: SupervisorSpec = mod.init(initArg);
+      if (spec.strategy && spec.strategy !== 'one_for_one') {
+        return { error: new Error('DynamicSupervisor only supports one_for_one strategy') };
+      }
       opts = {
         strategy: 'one_for_one',
         max_restarts: spec.max_restarts,
@@ -66,6 +69,10 @@ export async function start_link(
 }
 
 async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnStart> {
+  if (opts.strategy && opts.strategy !== 'one_for_one') {
+    return { error: new Error('DynamicSupervisor only supports one_for_one strategy') };
+  }
+
   const maxRestarts = opts.max_restarts ?? DEFAULT_MAX_RESTARTS;
   const maxSeconds = opts.max_seconds ?? DEFAULT_MAX_SECONDS;
   const maxChildren = opts.max_children ?? Infinity;
@@ -204,27 +211,28 @@ export function init(opts: SupervisorInitOptions = { strategy: 'one_for_one' }):
 
 // ---- public API -----------------------------------------------------------
 
-export function start_child(sup: PID, spec: ChildSpec): Promise<OnStartChild> {
-  return GS.genCall(sup, { type: 'start_child', payload: spec }) as Promise<OnStartChild>;
+export function start_child(sup: PID, spec: ChildSpec, timeout?: number): Promise<OnStartChild> {
+  return GS.genCall(sup, { type: 'start_child', payload: spec }, timeout) as Promise<OnStartChild>;
 }
 
 export function terminate_child(
   sup: PID,
   pid: PID,
+  timeout?: number,
 ): Promise<void | { error: string }> {
-  return GS.genCall(sup, { type: 'terminate_child', payload: pid }) as Promise<void | { error: string }>;
+  return GS.genCall(sup, { type: 'terminate_child', payload: pid }, timeout) as Promise<void | { error: string }>;
 }
 
-export function count_children(sup: PID): Promise<Counts> {
-  return GS.genCall(sup, { type: 'count_children', payload: null }) as Promise<Counts>;
+export function count_children(sup: PID, timeout?: number): Promise<Counts> {
+  return GS.genCall(sup, { type: 'count_children', payload: null }, timeout) as Promise<Counts>;
 }
 
-export function which_children(sup: PID): Promise<ChildInfo[]> {
-  return GS.genCall(sup, { type: 'which_children', payload: null }) as Promise<ChildInfo[]>;
+export function which_children(sup: PID, timeout?: number): Promise<ChildInfo[]> {
+  return GS.genCall(sup, { type: 'which_children', payload: null }, timeout) as Promise<ChildInfo[]>;
 }
 
-export async function stop(sup: PID, reason?: unknown): Promise<void> {
-  await GS.genCall(sup, { type: 'stop', payload: { reason } });
+export async function stop(sup: PID, reason?: unknown, timeout?: number): Promise<void> {
+  await GS.genCall(sup, { type: 'stop', payload: { reason } }, timeout);
 }
 
 // ---- helpers --------------------------------------------------------------

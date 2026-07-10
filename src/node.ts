@@ -307,7 +307,7 @@ export function spawn_link(
 
     Proc.spawn(async () => {
       const monRef = Proc.monitor(callerPid!);
-      const msg = await Proc.receive();
+      const msg = await Proc.receive(30000);
       if (msg && (msg as { type: string; ref: Ref }).type === 'DOWN') {
         const downMsg = msg as { type: 'DOWN'; ref: Ref; pid: PID; reason: unknown };
         if (downMsg.ref === monRef) {
@@ -437,7 +437,7 @@ function handleIncoming(msg: WireMessage): void {
           const capturedLinkId = payload.linkId;
           Proc.spawn(async () => {
             const monRef = Proc.monitor(capturedPid);
-            const downMsg = await Proc.receive();
+            const downMsg = await Proc.receive(30000);
             if (
               downMsg &&
               (downMsg as { type: string }).type === 'DOWN' &&
@@ -466,7 +466,7 @@ function handleIncoming(msg: WireMessage): void {
           const capturedRefId = payload.refId;
           Proc.spawn(async () => {
             const monRef = Proc.monitor(capturedPid);
-            const downMsg = await Proc.receive();
+            const downMsg = await Proc.receive(30000);
             if (
               downMsg &&
               (downMsg as { type: string }).type === 'DOWN' &&

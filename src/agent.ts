@@ -79,16 +79,16 @@ async function startGen<S>(init: () => S, opts?: { name?: string; link?: boolean
 
 // ---- get ------------------------------------------------------------------
 
-export async function get<S, R>(agent: PID | { module: Module; args: unknown[] }, fn: AgentArg<S, R>): Promise<R> {
+export async function get<S, R>(agent: PID | { module: Module; args: unknown[] }, fn: AgentArg<S, R>, timeout?: number): Promise<R> {
   const pid = resolvePid(agent);
-  return GS.genCall(pid, { type: 'get', payload: fn }) as Promise<R>;
+  return GS.genCall(pid, { type: 'get', payload: fn }, timeout) as Promise<R>;
 }
 
 // ---- update ---------------------------------------------------------------
 
-export async function update<S>(agent: PID | { module: Module; args: unknown[] }, fn: AgentArg<S, S>): Promise<void> {
+export async function update<S>(agent: PID | { module: Module; args: unknown[] }, fn: AgentArg<S, S>, timeout?: number): Promise<void> {
   const pid = resolvePid(agent);
-  await GS.genCall(pid, { type: 'update', payload: fn });
+  await GS.genCall(pid, { type: 'update', payload: fn }, timeout);
 }
 
 // ---- get_and_update -------------------------------------------------------
@@ -96,9 +96,10 @@ export async function update<S>(agent: PID | { module: Module; args: unknown[] }
 export async function get_and_update<S, R>(
   agent: PID | { module: Module; args: unknown[] },
   fn: AgentArg<S, [R, S]>,
+  timeout?: number,
 ): Promise<R> {
   const pid = resolvePid(agent);
-  return GS.genCall(pid, { type: 'get_and_update', payload: fn }) as Promise<R>;
+  return GS.genCall(pid, { type: 'get_and_update', payload: fn }, timeout) as Promise<R>;
 }
 
 // ---- cast -----------------------------------------------------------------
@@ -110,7 +111,7 @@ export function cast<S>(agent: PID | { module: Module; args: unknown[] }, fn: Ag
 
 // ---- stop -----------------------------------------------------------------
 
-export async function stop(agent: PID | { module: Module; args: unknown[] }, reason?: unknown): Promise<void> {
+export async function stop(agent: PID | { module: Module; args: unknown[] }, reason?: unknown, timeout?: number): Promise<void> {
   const pid = resolvePid(agent);
-  await GS.genStop(pid, reason);
+  await GS.genStop(pid, reason, timeout);
 }
