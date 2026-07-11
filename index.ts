@@ -10,5 +10,7 @@ export * as DynamicSupervisor from './src/dynamic_supervisor';
 export * as TaskSupervisor from './src/task_supervisor';
 export * as Node from './src/node';
 export * as Core from './src/core';
+export * as PubSub from './src/pubsub';
+export * as EventStream from './src/event_stream';
 
 export { WebRuntime, ActorSystem } from './src/core';

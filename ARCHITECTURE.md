@@ -23,6 +23,8 @@ src/
 └── index.ts              Namespaced re-exports of all modules
 tests/                    One test file per module, using bun:test
 index.ts                  Root re-exports (mirrors src/index.ts)
+src/pubsub.ts             Topic-based pub/sub with automatic subscriber cleanup
+src/event_stream.ts       AsyncIterable wrapper over a process mailbox
 ```
 
 ## Key types (`src/types.ts`)
@@ -178,6 +180,25 @@ No runtime npm dependencies.
 - **`src/gen_server.ts`** — internal framework; `startGenServer`, `genCall`,
   `genCast`, `genStop`, `reply` are available for building custom
   GenServer-based abstractions
+
+## PubSub (`src/pubsub.ts`)
+
+Topic-based publish/subscribe built on GenServer. Subscribers are
+monitored; exited processes are auto-removed from all topics.
+
+- Messages are tagged `{ __pubsub__: true, topic, message }` — use
+  `PubSub.isPubSubMessage()` type guard to filter.
+- `publish` fans out to all subscribers on a topic (fire-and-forget).
+- `subscribe`/`unsubscribe` are casts (async, no reply needed).
+- `subscribers`/`topics` are calls returning the current state.
+- Auto-cleanup: the PubSub monitors each subscriber; on `DOWN`, the
+  subscriber is removed from all its topics. Empty topics are deleted.
+
+## EventStream (`src/event_stream.ts`)
+
+Async-iterable wrapper: `EventStream.receive()` returns an
+`AsyncIterable` that yields every message received by the calling
+process until the process exits or the loop breaks.
 
 ## Instructions for agents
 

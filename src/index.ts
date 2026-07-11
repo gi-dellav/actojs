@@ -9,5 +9,7 @@ export * as TaskSupervisor from './task_supervisor';
 export * as GenServer from './gen_server';
 export * as Node from './node';
 export * as Core from './core';
+export * as PubSub from './pubsub';
+export * as EventStream from './event_stream';
 
 export { WebRuntime, WorkerRuntime, ActorSystem } from './core';

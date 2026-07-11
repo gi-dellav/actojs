@@ -382,6 +382,17 @@ export class ActorSystem {
       try { this.onExit(report); } catch (_) {}
     }
 
+    // Unblock any process waiting on receive()
+    if (proc.recvResolve) {
+      const resolve = proc.recvResolve;
+      proc.recvResolve = null;
+      if (proc.recvTimer) {
+        clearTimeout(proc.recvTimer);
+        proc.recvTimer = undefined;
+      }
+      resolve(undefined);
+    }
+
     // Notify linked processes
     proc.links.forEach((linkedPid) => {
       const linked = this.processes.get(linkedPid);

@@ -81,8 +81,8 @@ export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[] | SpawnO
       if (proc.status === 'running') {
         proc.status = 'exiting';
         proc.exitReason = proc.exitReason ?? err ?? 'normal';
+        sys.handleExit(proc);
       }
-      sys.handleExit(proc);
     };
 
     if (result instanceof Promise) {
@@ -148,8 +148,8 @@ export function spawn_monitor(fn: () => void | Promise<void>): { pid: PID; ref: 
       if (proc.status === 'running') {
         proc.status = 'exiting';
         proc.exitReason = proc.exitReason ?? err ?? 'normal';
+        sys.handleExit(proc);
       }
-      sys.handleExit(proc);
     };
 
     if (result instanceof Promise) {
