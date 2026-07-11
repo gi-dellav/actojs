@@ -123,6 +123,7 @@ self.onmessage = function(e) {
 // ---- Worker creation per environment --------------------------------------
 
 let _sharedBlobUrl: string | null = null;
+let _blobRefCount = 0;
 
 function buildWorkerUrl(): string | URL {
   if (detectEnv() === 'bun' || detectEnv() === 'deno') {
@@ -133,7 +134,18 @@ function buildWorkerUrl(): string | URL {
     const blob = new Blob([workerShellSrc()], { type: 'application/javascript' });
     _sharedBlobUrl = URL.createObjectURL(blob);
   }
+  _blobRefCount++;
   return _sharedBlobUrl;
+}
+
+function releaseBlobRef(): void {
+  if (--_blobRefCount <= 0) {
+    _blobRefCount = 0;
+    if (_sharedBlobUrl) {
+      URL.revokeObjectURL(_sharedBlobUrl);
+      _sharedBlobUrl = null;
+    }
+  }
 }
 
 function createWorker(): Worker {
@@ -164,6 +176,9 @@ export class WorkerRuntime {
   // ---- Message routing ----------------------------------------------------
 
   deliver(pid: PID, msg: unknown): void {
+    const sys = ActorSystem.current;
+    const proc = sys.getProcess(pid);
+    if (proc && (proc.status === 'exited' || proc.status === 'exiting')) return;
     const w = this.workers.get(pid);
     if (w) {
       w.postMessage({ __wr: 'msg', msg });
@@ -337,7 +352,13 @@ export class WorkerRuntime {
     opts?: SpawnOpt[] | SpawnOptions,
     args: any[] = [],
   ): PID {
-    return this._spawnImpl(fn, opts, args);
+    const { pid, ref } = this._spawnImpl(fn, opts, args);
+    if (ref != null) {
+      const sys = ActorSystem.current;
+      const proc = sys.getProcess(pid);
+      if (proc) proc.processDict.set('__monitor_ref', ref);
+    }
+    return pid;
   }
 
   // ---- spawnProcess (Runtime interface method) ----------------------------
@@ -348,7 +369,13 @@ export class WorkerRuntime {
    */
   spawnProcess(fn: () => void | Promise<void>, opts?: SpawnOpt[] | SpawnOptions): PID {
     const fnCode = fn.toString();
-    return this._spawnImpl((Wr: any, __code: any) => (0, eval)('(' + (__code as string) + ')')() as void, opts, [fnCode]);
+    const { pid, ref } = this._spawnImpl((Wr: any, __code: any) => (0, eval)('(' + (__code as string) + ')')() as void, opts, [fnCode]);
+    if (ref != null) {
+      const sys = ActorSystem.current;
+      const proc = sys.getProcess(pid);
+      if (proc) proc.processDict.set('__monitor_ref', ref);
+    }
+    return pid;
   }
 
   // ---- Internal spawn implementation --------------------------------------
@@ -357,7 +384,7 @@ export class WorkerRuntime {
     fn: (...args: any[]) => void | Promise<void>,
     opts: SpawnOpt[] | SpawnOptions | undefined,
     args: any[] = [],
-  ): PID {
+  ): { pid: PID; ref?: Ref } {
     const sys = ActorSystem.current;
     const pid = sys.generatePid();
     const proc = sys.createProcess(pid);
@@ -388,12 +415,13 @@ export class WorkerRuntime {
         callerProc.links.add(pid);
       }
     }
+    let monitorRef: Ref | undefined;
     if (monitor && caller) {
-      const ref: Ref = Symbol('monitor');
-      const callerProc = caller ? sys.getProcess(caller) : null;
+      monitorRef = Symbol('monitor');
+      const callerProc = sys.getProcess(caller);
       if (callerProc) {
-        proc.monitoredBy.set(caller, [ref]);
-        callerProc.monitors.set(ref, pid);
+        proc.monitoredBy.set(caller, [monitorRef]);
+        callerProc.monitors.set(monitorRef, pid);
       }
     }
 
@@ -410,6 +438,7 @@ export class WorkerRuntime {
       sys.handleExit(proc);
       worker.terminate();
       this.workers.delete(pid);
+      releaseBlobRef();
     };
 
     worker.onmessage = (e: MessageEvent) => {
@@ -421,7 +450,11 @@ export class WorkerRuntime {
           break;
         case 'send':
           {
-            const w = this.workers.get(d.target);
+            let w = this.workers.get(d.target);
+            if (!w) {
+              const resolved = sys.whereisName(d.target);
+              if (resolved) w = this.workers.get(resolved);
+            }
             if (w) {
               w.postMessage({ __wr: 'msg', msg: d.msg });
             } else {
@@ -453,25 +486,35 @@ export class WorkerRuntime {
       finish(proc.exitReason);
     };
 
+    worker.onmessageerror = () => {
+      proc.status = 'exiting';
+      proc.exitReason = proc.exitReason ?? 'message deserialization error';
+      finish(proc.exitReason);
+    };
+
     worker.postMessage({ __wr: 'init', pid });
-    return pid;
+    return { pid, ref: monitorRef };
   }
 
   // ---- Stop ----------------------------------------------------------------
 
   stop(): void {
     const sys = ActorSystem.current;
-    for (const [pid, worker] of this.workers) {
+    const entries = Array.from(this.workers);
+    for (const [pid] of entries) {
       const proc = sys.getProcess(pid);
       if (proc && proc.status === 'running') {
         proc.status = 'exiting';
         proc.exitReason = 'shutdown';
-        // Don't call handleExit here since it cascades to linked processes.
-        // Just mark as exited and deregister.
-        proc.status = 'exited';
-        sys.deregisterProcess(pid);
+      }
+    }
+    for (const [pid, worker] of entries) {
+      const proc = sys.getProcess(pid);
+      if (proc && proc.status === 'exiting') {
+        sys.handleExit(proc);
       }
       worker.terminate();
+      releaseBlobRef();
     }
     this.workers.clear();
   }
