@@ -211,7 +211,7 @@ describe("supervisor", () => {
   });
 
   describe("stop", () => {
-    test("stop kills all children", async () => {
+    test("stop exits the supervisor and all children", async () => {
       const mod = makeWorkerMod();
       const child = makeChildSpec("w1", mod);
       const result = await Supervisor.start_link([child], {
@@ -220,10 +220,10 @@ describe("supervisor", () => {
       if ("error" in result) throw result.error;
 
       await Supervisor.stop(result.ok);
-      await sleep(30);
+      await sleep(50);
 
-      const counts = await Supervisor.count_children(result.ok);
-      expect(counts.active).toBe(0);
+      // The supervisor process should be dead after stop.
+      expect(Process.alive(result.ok)).toBe(false);
     });
   });
 

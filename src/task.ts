@@ -7,11 +7,18 @@ import * as Proc from "./process";
 
 export { TimeoutError } from "./system";
 
+interface TaskWaiter {
+  resolve: (value: unknown) => void;
+  reject: (err: unknown) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
 /** Start a fire-and-forget asynchronous computation. Returns a handle for awaiting. */
 export function async<R>(fn: () => Promise<R>): TaskHandle<R> {
   const sys = ActorSystem.current;
   const ref: Ref = Symbol("task");
-  sys.taskResults.set(ref, { status: "pending" });
+  const entry: any = { status: "pending", _waiters: [] as TaskWaiter[] };
+  sys.taskResults.set(ref, entry);
 
   const pid = Proc.spawn(async () => {
     try {
@@ -20,15 +27,23 @@ export function async<R>(fn: () => Promise<R>): TaskHandle<R> {
       if (entry) {
         entry.status = "done";
         entry.value = value;
-        // Notify waiters
-        (entry as any)._resolve?.(value);
+        // Notify all waiters
+        for (const w of (entry as any)._waiters ?? []) {
+          if (w.timer) clearTimeout(w.timer);
+          w.resolve(value);
+        }
+        (entry as any)._waiters = [];
       }
     } catch (err) {
       const entry = sys.taskResults.get(ref);
       if (entry) {
         entry.status = "error";
         entry.error = err;
-        (entry as any)._reject?.(err);
+        for (const w of (entry as any)._waiters ?? []) {
+          if (w.timer) clearTimeout(w.timer);
+          w.reject(err);
+        }
+        (entry as any)._waiters = [];
       }
     }
   });
@@ -36,7 +51,8 @@ export function async<R>(fn: () => Promise<R>): TaskHandle<R> {
   return { pid, ref };
 }
 
-/** Block until the task completes, returning its result. Supports an optional timeout. */
+/** Block until the task completes, returning its result. Supports an optional timeout.
+ *  Multiple callers can await the same task concurrently. */
 export function await_<R>(task: TaskHandle<R>, timeout?: number): Promise<R> {
   const sys = ActorSystem.current;
   const result = sys.taskResults.get(task.ref);
@@ -45,21 +61,34 @@ export function await_<R>(task: TaskHandle<R>, timeout?: number): Promise<R> {
   if (result.status === "done") return Promise.resolve(result.value as R);
   if (result.status === "error") return Promise.reject(result.error);
 
-  return new Promise((resolve, reject) => {
+  return new Promise<R>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     if (timeout != null) {
       timer = setTimeout(() => {
+        // Remove this waiter from the list on timeout
+        const entry: any = sys.taskResults.get(task.ref);
+        if (entry?._waiters) {
+          entry._waiters = entry._waiters.filter(
+            (w: TaskWaiter) => w.resolve !== resolve,
+          );
+        }
         reject(new TimeoutError("task await timed out"));
       }, timeout);
     }
-    (result as any)._resolve = (value: R) => {
+    const waiter: TaskWaiter = { resolve: resolve as (v: unknown) => void, reject, timer };
+    const entry: any = sys.taskResults.get(task.ref);
+    if (entry?._waiters) {
+      entry._waiters.push(waiter);
+    }
+    // Re-check in case the task completed between the initial check and now
+    const recheck = sys.taskResults.get(task.ref);
+    if (recheck?.status === "done") {
       if (timer) clearTimeout(timer);
-      resolve(value);
-    };
-    (result as any)._reject = (err: unknown) => {
+      resolve(recheck.value as R);
+    } else if (recheck?.status === "error") {
       if (timer) clearTimeout(timer);
-      reject(err);
-    };
+      reject(recheck.error);
+    }
   });
 }
 

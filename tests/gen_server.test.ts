@@ -710,4 +710,71 @@ describe("GenServer", () => {
       expect(Process.alive(result.ok)).toBe(true);
     });
   });
+
+  describe("exec_timeout", () => {
+    test("exec_timeout does not leak timers after handler completes", async () => {
+      const result = await GS.start<{ count: number }>(
+        {
+          init() {
+            return { count: 0 };
+          },
+          handle_call(msg, _from, state) {
+            return { reply: (msg as string).length, state };
+          },
+          handle_cast(_msg, state) {
+            return { noreply: undefined, state };
+          },
+        },
+        null,
+      );
+      if ("error" in result) throw result.error;
+
+      const pid = result.ok;
+      const proc = M.getProcess(pid)!;
+      proc.execTimeout = 100; // set short timeout
+
+      // Make many fast calls — timers should be cleaned up.
+      for (let i = 0; i < 10; i++) {
+        const reply = await GS.call(pid, "hello");
+        expect(reply).toBe(5);
+      }
+
+      // Casts also exercise the timer path
+      for (let i = 0; i < 10; i++) {
+        GS.cast(pid, "fire");
+      }
+      await sleep(30);
+      expect(Process.alive(pid)).toBe(true);
+    });
+
+    test("exec_timeout kills after 3 strikes on calls", async () => {
+      const result = await GS.start<{}>(
+        {
+          init() {
+            return {};
+          },
+          async handle_call(_msg, _from, state) {
+            // Block forever to trigger timeout
+            return new Promise(() => {});
+          },
+        },
+        null,
+      );
+      if ("error" in result) throw result.error;
+
+      const pid = result.ok;
+      const proc = M.getProcess(pid)!;
+      proc.execTimeout = 20;
+
+      // Each call will time out; after 3 the process should exit.
+      for (let i = 0; i < 3; i++) {
+        await expect(GS.call(pid, "slow")).rejects.toThrow("execution timeout");
+        await sleep(30);
+      }
+
+      // The 4th call should fail because the process is dead.
+      await sleep(30);
+      expect(Process.alive(pid)).toBe(false);
+    });
+  });
 });

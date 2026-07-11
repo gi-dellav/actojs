@@ -390,75 +390,82 @@ export class ActorSystem {
 
   // ---- Scheduling helpers ------------------------------------------------
 
-  /** Perform the full exit protocol: notify links and monitors, then deregister. */
+  /** Perform the full exit protocol: notify links and monitors, then deregister.
+   *  Uses an iterative worklist to avoid stack overflow on deeply linked chains. */
   handleExit(proc: ProcessState): void {
-    proc.status = "exited";
+    const worklist: ProcessState[] = [proc];
 
-    const report: ExitReport = {
-      pid: proc.pid,
-      reason: proc.exitReason,
-      registeredName: proc.registeredName,
-      timestamp: Date.now(),
-      links: Array.from(proc.links),
-    };
+    while (worklist.length > 0) {
+      const current = worklist.shift()!;
+      if (current.status === "exited") continue;
+      current.status = "exited";
 
-    if (proc.exitReason !== "normal" && proc.exitReason !== "shutdown") {
-      console.error(
-        `[actojs] Process ${proc.pid}${proc.registeredName ? ` (${proc.registeredName})` : ""} exited: ${String(proc.exitReason)}`,
-      );
-    }
+      const report: ExitReport = {
+        pid: current.pid,
+        reason: current.exitReason,
+        registeredName: current.registeredName,
+        timestamp: Date.now(),
+        links: Array.from(current.links),
+      };
 
-    if (this.onExit) {
-      try {
-        this.onExit(report);
-      } catch (_) {}
-    }
-
-    // Unblock any process waiting on receive()
-    if (proc.recvResolve) {
-      const resolve = proc.recvResolve;
-      proc.recvResolve = null;
-      if (proc.recvTimer) {
-        clearTimeout(proc.recvTimer);
-        proc.recvTimer = undefined;
+      if (current.exitReason !== "normal" && current.exitReason !== "shutdown") {
+        console.error(
+          `[actojs] Process ${current.pid}${current.registeredName ? ` (${current.registeredName})` : ""} exited: ${String(current.exitReason)}`,
+        );
       }
-      resolve(undefined);
-    }
 
-    // Notify linked processes
-    proc.links.forEach((linkedPid) => {
-      const linked = this.processes.get(linkedPid);
-      if (linked && linked.status !== "exited" && linked.status !== "exiting") {
-        if (linked.trapExit) {
-          this.deliverMessage(linkedPid, {
-            type: "EXIT",
-            from: proc.pid,
-            reason: proc.exitReason,
-          });
-        } else {
-          linked.status = "exiting";
-          linked.exitReason = proc.exitReason;
-          this.handleExit(linked);
+      if (this.onExit) {
+        try {
+          this.onExit(report);
+        } catch (_) {}
+      }
+
+      // Unblock any process waiting on receive()
+      if (current.recvResolve) {
+        const resolve = current.recvResolve;
+        current.recvResolve = null;
+        if (current.recvTimer) {
+          clearTimeout(current.recvTimer);
+          current.recvTimer = undefined;
         }
+        resolve(undefined);
       }
-    });
 
-    // Notify monitoring processes
-    proc.monitoredBy.forEach((refs, monitorPid) => {
-      const monitor = this.processes.get(monitorPid);
-      if (monitor && monitor.status !== "exited") {
-        for (const ref of refs) {
-          this.deliverMessage(monitorPid, {
-            type: "DOWN",
-            ref,
-            pid: proc.pid,
-            reason: proc.exitReason,
-          });
+      // Notify linked processes; cascade non-trap_exit ones onto the worklist.
+      current.links.forEach((linkedPid) => {
+        const linked = this.processes.get(linkedPid);
+        if (linked && linked.status !== "exited" && linked.status !== "exiting") {
+          if (linked.trapExit) {
+            this.deliverMessage(linkedPid, {
+              type: "EXIT",
+              from: current.pid,
+              reason: current.exitReason,
+            });
+          } else {
+            linked.status = "exiting";
+            linked.exitReason = current.exitReason;
+            worklist.push(linked);
+          }
         }
-      }
-    });
+      });
 
-    this.deregisterProcess(proc.pid);
+      // Notify monitoring processes
+      current.monitoredBy.forEach((refs, monitorPid) => {
+        const monitor = this.processes.get(monitorPid);
+        if (monitor && monitor.status !== "exited") {
+          for (const ref of refs) {
+            this.deliverMessage(monitorPid, {
+              type: "DOWN",
+              ref,
+              pid: current.pid,
+              reason: current.exitReason,
+            });
+          }
+        }
+      });
+
+      this.deregisterProcess(current.pid);
+    }
   }
 
   /** Build a snapshot of a process's public information for inspection. */

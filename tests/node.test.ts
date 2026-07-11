@@ -435,4 +435,38 @@ describe("node", () => {
       Process.exit(nodePid, "done");
     });
   });
+
+  describe("Node.spawn proxy PID", () => {
+    test("Node.spawn returns a PID that stays alive (proxy waits for result)", async () => {
+      // Start a node so Node.spawn has a source node name.
+      Node.start("node_proxy_spawn_test");
+
+      const pid = Node.spawn("remote_node", () => {});
+      await new Promise((r) => setTimeout(r, 30));
+
+      // The proxy PID should still be alive — it's waiting for spawn_result.
+      expect(Process.alive(pid)).toBe(true);
+
+      Process.exit(pid, "shutdown");
+    });
+
+    test("Node.spawn_link returns a valid PID", async () => {
+      Node.start("node_proxy_link_test");
+
+      const pid = Node.spawn_link("remote_node", () => {});
+      expect(pid).toMatch(/^#PID</);
+
+      Process.exit(pid, "shutdown");
+    });
+
+    test("Node.spawn_monitor returns pid and ref", async () => {
+      Node.start("node_proxy_mon_test");
+
+      const result = Node.spawn_monitor("remote_node", () => {});
+      expect(result.pid).toMatch(/^#PID</);
+      expect(typeof result.ref).toBe("symbol");
+
+      Process.exit(result.pid, "shutdown");
+    });
+  });
 });

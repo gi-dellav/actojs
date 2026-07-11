@@ -51,6 +51,8 @@ interface CrossNodeMonitor {
 const crossNodeLinks = new Map<string, CrossNodeLink>();
 const crossNodeMonitors = new Map<string, CrossNodeMonitor>();
 const remoteSpawnRegistry = new Map<string, PID>();
+// Maps replyId → proxyPid for spawn() calls waiting for spawn_result.
+const pendingSpawns = new Map<string, PID>();
 
 let linkIdCounter = 0;
 function generateLinkId(): string {
@@ -117,6 +119,7 @@ export function stop(): void | { error: Error } {
   });
   crossNodeMonitors.clear();
   remoteSpawnRegistry.clear();
+  pendingSpawns.clear();
   nodeName = null;
   connectedNodes.clear();
 }
@@ -238,7 +241,8 @@ export function demonitor_node(ref: Ref): void {
 
 // ---- spawn remote ---------------------------------------------------------
 
-/** Spawn a function or MFA on a remote node via BroadcastChannel. */
+/** Spawn a function or MFA on a remote node via BroadcastChannel.
+ *  Returns a PID that routes messages to the remote process transparently. */
 export function spawn(
   node: string,
   fnOrModule: (() => void) | Module,
@@ -249,12 +253,15 @@ export function spawn(
     throw new Error("BroadcastChannel not available");
   }
 
+  const replyId = generateLinkId();
+
   let spawnPayload: SpawnPayload;
 
   if (typeof fnOrModule === "function") {
     spawnPayload = {
       type: "fn",
       source: fnOrModule.toString(),
+      linkId: replyId,
     };
   } else {
     spawnPayload = {
@@ -262,19 +269,57 @@ export function spawn(
       module: fnOrModule,
       fn: fnName!,
       args: args ?? [],
+      linkId: replyId,
     };
   }
 
-  const fakePid = Proc.spawn(() => {
+  // Create a proxy PID that forwards messages to the remote process.
+  const proxyPid = Proc.spawn(async () => {
+    // Register so handleIncoming can deliver spawn_result directly to us.
+    pendingSpawns.set(replyId, proxyPid);
+
     broadcastChannel!.postMessage({
       from: nodeName!,
       to: node,
       type: "spawn",
       payload: spawnPayload,
     });
+
+    // Wait for the remote side to report back with the real PID.
+    // The remote side sends spawn_result via handleIncoming, which delivers
+    // a { __spawn_result__, pid } message directly to this proxy.
+    while (true) {
+      const msg = await Proc.receive(10000);
+      if (!msg) break; // timeout or process exited
+      if (
+        msg &&
+        typeof msg === "object" &&
+        (msg as any).__spawn_result__ === replyId
+      ) {
+        // Got the real remote PID.
+        const realPid = (msg as any).pid as string;
+        remoteSpawnRegistry.set(proxyPid, realPid);
+        remoteSpawnRegistry.set(replyId, realPid);
+        pendingSpawns.delete(replyId);
+
+        // Now proxy: wait for messages forwarded to us and re-send to remote.
+        while (true) {
+          const fwd = await Proc.receive();
+          if (!fwd) break;
+          broadcastChannel!.postMessage({
+            from: nodeName!,
+            to: node,
+            type: "spawn_send",
+            payload: { target: realPid, msg: fwd },
+          });
+        }
+        return;
+      }
+    }
+    pendingSpawns.delete(replyId);
   });
 
-  return fakePid;
+  return proxyPid;
 }
 
 /** Spawn a function or MFA on a remote node and link it to the caller. */
@@ -456,6 +501,16 @@ function handleIncoming(msg: WireMessage): void {
       }
 
       if (spawnedPid && originNode) {
+        // Always send spawn_result back so the origin can map proxy→real PID.
+        if (payload.linkId && broadcastChannel) {
+          broadcastChannel.postMessage({
+            from: nodeName,
+            to: originNode,
+            type: "spawn_result",
+            payload: { replyId: payload.linkId, pid: spawnedPid },
+          });
+        }
+
         if (payload.linkId) {
           remoteSpawnRegistry.set(payload.linkId, spawnedPid);
           const capturedPid = spawnedPid;
@@ -514,6 +569,30 @@ function handleIncoming(msg: WireMessage): void {
           });
         }
       }
+      break;
+    }
+    case "spawn_result": {
+      const { replyId, pid: realPid } = msg.payload as {
+        replyId: string;
+        pid: string;
+      };
+      remoteSpawnRegistry.set(replyId, realPid);
+      // Deliver directly to the proxy process waiting on this replyId.
+      const proxyPid = pendingSpawns.get(replyId);
+      if (proxyPid) {
+        Proc.send(proxyPid, { __spawn_result__: replyId, pid: realPid });
+        pendingSpawns.delete(replyId);
+      }
+      break;
+    }
+    case "spawn_send": {
+      const { target, msg: fwdMsg } = msg.payload as {
+        target: string;
+        msg: unknown;
+      };
+      // Resolve target: could be a PID or a replyId stored in registry.
+      const resolved = remoteSpawnRegistry.get(target) ?? target;
+      Proc.send(resolved, fwdMsg);
       break;
     }
     case "spawn_exit": {

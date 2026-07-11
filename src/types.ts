@@ -40,6 +40,9 @@ export interface SpawnOptions {
   link?: boolean;
   monitor?: boolean;
   limits?: ProcessLimits;
+  /** When true, delegates to the active WorkerRuntime for true parallelism.
+   *  Defaults to false (cooperative scheduling). */
+  worker?: boolean;
 }
 
 /**

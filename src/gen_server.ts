@@ -175,10 +175,13 @@ async function _startGenServer<S>(
       Proc.send(me, { __gen_server__: "continue", payload: initContinue });
     }
 
+    // Sentinel used to distinguish "empty mailbox" from a legitimately-sent undefined.
+    const EMPTY = Symbol("empty_mailbox");
+
     const loop = async () => {
       while (Proc.alive(me)) {
-        let msg = sys.shiftMessage(me);
-        if (msg === undefined) {
+        let msg: unknown = sys.hasMessages(me) ? sys.shiftMessage(me) : EMPTY;
+        if (msg === EMPTY) {
           msg = await M.receiveMessage(me);
         }
 
@@ -196,18 +199,23 @@ async function _startGenServer<S>(
               const proc = sys.getProcess(me);
               const timeout = proc?.execTimeout ?? 0;
               const handler = callbacks.handle_call(payload, from, state, me);
-              const result =
-                timeout > 0
-                  ? await Promise.race([
-                      handler,
-                      new Promise<never>((_, rej) =>
-                        setTimeout(
-                          () => rej(new TimeoutError("execution timeout")),
-                          timeout,
-                        ),
-                      ),
-                    ])
-                  : await handler;
+              let result: HandleCallResult<S>;
+              if (timeout > 0) {
+                let timer: ReturnType<typeof setTimeout> | undefined;
+                const timeoutPromise = new Promise<never>((_, rej) => {
+                  timer = setTimeout(
+                    () => rej(new TimeoutError("execution timeout")),
+                    timeout,
+                  );
+                });
+                try {
+                  result = await Promise.race([handler, timeoutPromise]);
+                } finally {
+                  if (timer) clearTimeout(timer);
+                }
+              } else {
+                result = await handler;
+              }
               state = result.state;
               if ("reply" in result) {
                 resolvePending(ref, { ok: result.reply });
@@ -251,18 +259,23 @@ async function _startGenServer<S>(
               const proc = sys.getProcess(me);
               const timeout = proc?.execTimeout ?? 0;
               const handler = callbacks.handle_cast(payload, state, me);
-              const result =
-                timeout > 0
-                  ? await Promise.race([
-                      handler,
-                      new Promise<never>((_, rej) =>
-                        setTimeout(
-                          () => rej(new TimeoutError("execution timeout")),
-                          timeout,
-                        ),
-                      ),
-                    ])
-                  : await handler;
+              let result: HandleInfoResult<S> | undefined;
+              if (timeout > 0) {
+                let timer: ReturnType<typeof setTimeout> | undefined;
+                const timeoutPromise = new Promise<never>((_, rej) => {
+                  timer = setTimeout(
+                    () => rej(new TimeoutError("execution timeout")),
+                    timeout,
+                  );
+                });
+                try {
+                  result = await Promise.race([handler, timeoutPromise]);
+                } finally {
+                  if (timer) clearTimeout(timer);
+                }
+              } else {
+                result = await handler;
+              }
               if (result) {
                 state = result.state;
                 if (result.continue !== undefined) {

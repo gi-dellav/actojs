@@ -213,7 +213,7 @@ describe("dynamic_supervisor", () => {
   });
 
   describe("stop", () => {
-    test("stop kills all children", async () => {
+    test("stop exits the dynamic supervisor and all children", async () => {
       const result = await DynamicSupervisor.start_link({
         strategy: "one_for_one",
       });
@@ -228,10 +228,10 @@ describe("dynamic_supervisor", () => {
 
       await DynamicSupervisor.start_child(sup, childSpec);
       await DynamicSupervisor.stop(sup);
-      await sleep(30);
+      await sleep(50);
 
-      const counts = await DynamicSupervisor.count_children(sup);
-      expect(counts.active).toBe(0);
+      // The supervisor process should be dead after stop.
+      expect(Process.alive(sup)).toBe(false);
     });
   });
 

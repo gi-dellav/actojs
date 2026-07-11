@@ -365,7 +365,7 @@ describe("NodeRuntime", () => {
   });
 
   describe("integration with Process.spawn", () => {
-    test("Process.spawn delegates to NodeRuntime when set", async () => {
+    test("Process.spawn delegates to NodeRuntime when {worker:true}", async () => {
       setRuntime(nr);
       const listener = createListener();
       const body = `
@@ -374,14 +374,14 @@ describe("NodeRuntime", () => {
       `;
       // eslint-disable-next-line no-new-func
       const fn = new Function(body) as () => void;
-      const pid = Process.spawn(fn);
+      const pid = Process.spawn(fn, { worker: true });
       await sleep(150);
       const msg = M.shiftMessage(listener);
       expect(msg).toBe("ran");
       expect(pid).toMatch(/^#PID</);
     });
 
-    test("Process.spawn returns correct PID with link option", () => {
+    test("Process.spawn returns correct PID with link option and worker", () => {
       setRuntime(nr);
       const callerPid = "caller_nr_integration";
       const proc = M.createProcess(callerPid);
@@ -389,12 +389,20 @@ describe("NodeRuntime", () => {
       M.registerProcess(callerPid, proc);
       M.pushPid(callerPid);
 
-      const pid = Process.spawn(() => {}, ["link"]);
+      const pid = Process.spawn(() => {}, { link: true, worker: true });
       expect(pid).toMatch(/^#PID</);
       const spawned = M.getProcess(pid);
       expect(spawned!.links.has(callerPid)).toBe(true);
 
       M.popPid();
+    });
+
+    test("Process.spawn does NOT delegate to NodeRuntime without {worker:true}", async () => {
+      setRuntime(nr);
+      let ran = false;
+      Process.spawn(() => { ran = true; });
+      await sleep(50);
+      expect(ran).toBe(true);
     });
   });
 });

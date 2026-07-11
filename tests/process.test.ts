@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
+import type { PID } from "../src/types";
 import * as Process from "../src/process";
 import * as M from "../src/mailbox";
 import { sleep } from "./helpers";
@@ -773,6 +774,44 @@ describe("process", () => {
 
       Process.unregister("to_remove");
       expect(Process.whereis("to_remove")).toBeNull();
+    });
+  });
+
+  describe("spawn_async_link", () => {
+    test("links the caller to the spawned process", async () => {
+      let spawnedPid: PID = "";
+      let callerPid: PID = "";
+
+      // We need to be inside a process to link, so we spawn a wrapper
+      // that calls spawn_async_link and verifies the link.
+      await new Promise<void>((resolve) => {
+        Process.spawn(async () => {
+          callerPid = Process.self();
+          spawnedPid = await Process.spawn_async_link(async () => {
+            await Process.receive();
+          });
+          const spawned = M.getProcess(spawnedPid);
+          expect(spawned!.links.has(callerPid)).toBe(true);
+          Process.exit(spawnedPid, "normal");
+          resolve();
+        });
+      });
+      await sleep(10);
+    });
+  });
+
+  describe("undefined message delivery", () => {
+    test("sending undefined is received correctly", async () => {
+      let received: unknown = Symbol("not_received");
+      const pid = Process.spawn(() => {
+        Process.receive().then((msg) => {
+          received = msg;
+        });
+      });
+      await sleep(5);
+      Process.send(pid, undefined);
+      await sleep(10);
+      expect(received).toBeUndefined();
     });
   });
 });

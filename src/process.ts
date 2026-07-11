@@ -29,7 +29,14 @@ export function spawn(
   opts?: SpawnOpt[] | SpawnOptions,
 ): PID {
   const rt = getRuntime();
-  if (rt.spawnProcess) {
+  // Only delegate to WorkerRuntime when explicitly requested via { worker: true }.
+  // Automatic delegation breaks GenServer-based abstractions (Agent, Supervisor, etc.)
+  // whose callbacks close over stack-local state that doesn't survive fn.toString().
+  const workerRequested =
+    opts != null &&
+    !Array.isArray(opts) &&
+    (opts as SpawnOptions).worker === true;
+  if (rt.spawnProcess && workerRequested) {
     const pid = rt.spawnProcess(fn, opts);
     if (pid != null) return pid;
   }
@@ -78,7 +85,9 @@ export function spawn(
     }
   }
 
-  // Schedule execution within the captured system
+  // Schedule execution within the captured system.
+  // Must return the Promise chain to ActorSystem.run so the system context
+  // stays active across async boundaries (awaits) inside the process body.
   queueMicrotask(() => {
     ActorSystem.run(sys, () => {
       const result = sys.runWithPid(pid, () => {
@@ -99,10 +108,10 @@ export function spawn(
       };
 
       if (result instanceof Promise) {
-        result.then(finish, finish);
-      } else {
-        finish();
+        return result.then(finish, finish);
       }
+      finish();
+      return undefined;
     }); // ActorSystem.run
   });
 
@@ -110,18 +119,36 @@ export function spawn(
 }
 
 /** Spawn a new process and link it to the caller. */
-export function spawn_link(fn: () => void): PID {
+export function spawn_link(fn: () => void | Promise<void>): PID {
   return spawn(fn, ["link"]);
 }
 
+/** Spawn a new process, link it to the caller, and return the PID.
+ *  Unlike spawn_link, this accepts async functions and returns a
+ *  promise that resolves once the process is spawned and linked. */
+export async function spawn_async_link(
+  fn: () => void | Promise<void>,
+  opts?: SpawnOpt[] | SpawnOptions,
+): Promise<PID> {
+  return spawn(fn, Array.isArray(opts) ? [...opts, "link"] : { ...opts, link: true });
+}
+
 /** Spawn a new process and monitor it, returning the PID and the monitor reference. */
-export function spawn_monitor(fn: () => void | Promise<void>): {
+export function spawn_monitor(
+  fn: () => void | Promise<void>,
+  opts?: SpawnOpt[] | SpawnOptions,
+): {
   pid: PID;
   ref: Ref;
 } {
   const rt = getRuntime();
-  if (rt.spawnProcess) {
-    const pid = rt.spawnProcess(fn, ["monitor"]);
+  const workerRequested =
+    opts != null &&
+    !Array.isArray(opts) &&
+    (opts as SpawnOptions).worker === true;
+  if (rt.spawnProcess && workerRequested) {
+    const monitorOpts: SpawnOpt[] = ["monitor"];
+    const pid = rt.spawnProcess(fn, monitorOpts);
     if (pid != null) {
       const caller = ActorSystem.current.getCurrentPid();
       if (caller) {
@@ -171,10 +198,10 @@ export function spawn_monitor(fn: () => void | Promise<void>): {
       };
 
       if (result instanceof Promise) {
-        result.then(finish, finish);
-      } else {
-        finish();
+        return result.then(finish, finish);
       }
+      finish();
+      return undefined;
     });
   });
 

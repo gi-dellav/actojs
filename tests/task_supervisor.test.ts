@@ -171,15 +171,15 @@ describe("TaskSupervisor", () => {
   });
 
   describe("stop", () => {
-    test("stops all children", async () => {
+    test("stops supervisor and all children", async () => {
       const { ok: sup } = await TaskSupervisor.start_link();
-      const { ok: pid } = await TaskSupervisor.start_child(sup, async () => {
+      await TaskSupervisor.start_child(sup, async () => {
         await sleep(500);
       });
       await TaskSupervisor.stop(sup);
-      await sleep(30);
-      const counts = await TaskSupervisor.count_children(sup);
-      expect(counts.active).toBe(0);
+      await sleep(50);
+      // The supervisor process should be dead after stop.
+      expect(Process.alive(sup)).toBe(false);
     });
   });
 

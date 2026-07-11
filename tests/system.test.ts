@@ -5,6 +5,9 @@ import * as M from "../src/mailbox";
 import { sleep } from "./helpers";
 
 beforeEach(() => {
+  // Reset to the default system so lingering async processes from previous
+  // tests don't leave ActorSystem.current pointing at a custom system.
+  ActorSystem.current = ActorSystem.default;
   for (const pid of M.allPids()) {
     M.deregisterProcess(pid);
   }
@@ -387,6 +390,51 @@ describe("ActorSystem", () => {
       M.registerProcess(pid, proc);
 
       await expect(M.receiveMessage(pid, 5)).rejects.toThrow("timed out");
+    });
+  });
+
+  describe("ActorSystem context across awaits", () => {
+    test("ActorSystem.current remains correct after await in spawned process", async () => {
+      const sys = new ActorSystem("ctx_test");
+      let afterAwaitSys: string | null = null;
+
+      await new Promise<void>((resolve) => {
+        ActorSystem.run(sys, () => {
+          Process.spawn(async () => {
+            // The system should be "ctx_test" before the await...
+            const beforeSys = ActorSystem.current.systemId;
+            await Process.sleep(5);
+            // ...and still be "ctx_test" after resuming.
+            afterAwaitSys = ActorSystem.current.systemId;
+            // Verify self() works too
+            const me = Process.self();
+            expect(me).toMatch(/^#PID</);
+            expect(me).toContain("ctx_test");
+            resolve();
+          });
+        });
+      });
+
+      expect(afterAwaitSys).toBe("ctx_test");
+    });
+
+    test("ActorSystem.run preserves context across multiple awaits", async () => {
+      const sys = new ActorSystem("multi_await");
+      const results: string[] = [];
+
+      await ActorSystem.run(sys, async () => {
+        const pid = Process.spawn(async () => {
+          results.push(ActorSystem.current.systemId);
+          await Process.sleep(5);
+          results.push(ActorSystem.current.systemId);
+          await Process.sleep(5);
+          results.push(ActorSystem.current.systemId);
+        });
+        // Wait for process to finish
+        await Process.sleep(30);
+      });
+
+      expect(results).toEqual(["multi_await", "multi_await", "multi_await"]);
     });
   });
 });

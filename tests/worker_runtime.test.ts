@@ -381,7 +381,7 @@ describe("WorkerRuntime", () => {
   });
 
   describe("integration with Process.spawn", () => {
-    test("Process.spawn delegates to WorkerRuntime when set", async () => {
+    test("Process.spawn delegates to WorkerRuntime when {worker:true}", async () => {
       setRuntime(wr);
       const listener = createListener();
       // Build a function that has the listener PID embedded as a string literal,
@@ -392,14 +392,14 @@ describe("WorkerRuntime", () => {
       `;
       // eslint-disable-next-line no-new-func
       const fn = new Function(body) as () => void;
-      const pid = Process.spawn(fn);
+      const pid = Process.spawn(fn, { worker: true });
       await sleep(100);
       const msg = M.shiftMessage(listener);
       expect(msg).toBe("ran");
       expect(pid).toMatch(/^#PID</);
     });
 
-    test("Process.spawn returns correct PID with link option", () => {
+    test("Process.spawn returns correct PID with link option and worker", () => {
       setRuntime(wr);
       const callerPid = "caller_integration";
       const proc = M.createProcess(callerPid);
@@ -407,7 +407,7 @@ describe("WorkerRuntime", () => {
       M.registerProcess(callerPid, proc);
       M.pushPid(callerPid);
 
-      const pid = Process.spawn(() => {}, ["link"]);
+      const pid = Process.spawn(() => {}, { link: true, worker: true });
       expect(pid).toMatch(/^#PID</);
       const spawned = M.getProcess(pid);
       expect(spawned!.links.has(callerPid)).toBe(true);
@@ -429,6 +429,16 @@ describe("WorkerRuntime", () => {
       await sleep(20);
       const msg = M.shiftMessage(listener);
       expect(msg).toBe("ran_web");
+    });
+
+    test("Process.spawn does NOT delegate to WorkerRuntime without {worker:true}", async () => {
+      setRuntime(wr);
+      const listener = createListener();
+      // Without {worker:true}, the function runs in the main thread.
+      let ran = false;
+      Process.spawn(() => { ran = true; });
+      await sleep(30);
+      expect(ran).toBe(true);
     });
   });
 });

@@ -242,6 +242,11 @@ async function startSupervisor(
           s.children.clear();
           s.specs.clear();
           s.childOrder = [];
+          // Reply to the caller first, then self-terminate via GenServer stop.
+          Proc.send(supPid, {
+            __gen_server__: "stop",
+            reason: reason ?? "shutdown",
+          });
           return { reply: undefined, state: s };
         }
 

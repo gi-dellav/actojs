@@ -181,6 +181,11 @@ async function startDynamicSupervisor(
             Proc.exit(pid, reason ?? "shutdown");
           });
           s.children.clear();
+          // Reply to the caller first, then self-terminate via GenServer stop.
+          Proc.send(supPid, {
+            __gen_server__: "stop",
+            reason: reason ?? "shutdown",
+          });
           return { reply: undefined, state: s };
         }
 

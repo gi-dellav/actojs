@@ -158,4 +158,36 @@ describe("task", () => {
       await Task.shutdown(t2);
     });
   });
+
+  describe("multiple awaiters", () => {
+    test("multiple callers can await the same task", async () => {
+      const handle = Task.async(async () => {
+        await sleep(30);
+        return 99;
+      });
+
+      const [r1, r2, r3] = await Promise.all([
+        Task.await_(handle),
+        Task.await_(handle),
+        Task.await_(handle),
+      ]);
+
+      expect(r1).toBe(99);
+      expect(r2).toBe(99);
+      expect(r3).toBe(99);
+    });
+
+    test("await_ on completed task resolves immediately for all callers", async () => {
+      const handle = Task.async(async () => 42);
+      await Task.await_(handle); // wait for completion
+
+      // Multiple callers after completion should all get the result.
+      const [r1, r2] = await Promise.all([
+        Task.await_(handle),
+        Task.await_(handle),
+      ]);
+      expect(r1).toBe(42);
+      expect(r2).toBe(42);
+    });
+  });
 });
