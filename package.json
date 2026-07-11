@@ -19,8 +19,7 @@
     "./gen_server": "./src/gen_server.ts",
     "./task_supervisor": "./src/task_supervisor.ts",
     "./node_runtime": "./src/node_runtime.ts",
-    "./internals": "./src/internals.ts",
-    "./internals/mailbox": "./src/mailbox.ts"
+    "./runtimes": "./src/runtimes.ts"
   },
   "scripts": {
     "build:docs": "typedoc",

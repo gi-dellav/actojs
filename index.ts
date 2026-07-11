@@ -14,7 +14,7 @@ export * as PubSub from './src/pubsub';
 export * as EventStream from './src/event_stream';
 export * as GenServer from './src/gen_server';
 export * as System from './src/system';
-export * as Internals from './src/internals';
+export * as Runtimes from './src/runtimes';
 
 export { WebRuntime, ActorSystem } from './src/core';
 export { NodeRuntime } from './src/node_runtime';

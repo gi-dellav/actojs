@@ -3,6 +3,8 @@
 // pending calls, task results, and timers. Systems are fully isolated.
 
 import type { PID, Ref, ProcessInfo } from './types';
+export * as Mailbox from './mailbox';
+export * as Types from './types';
 
 export class TimeoutError extends Error {
   constructor(message = 'timeout') {
