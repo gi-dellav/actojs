@@ -1,8 +1,6 @@
-// actojs — Internal GenServer base for Agent, Registry, Supervisor, etc.
-// Provides a receive loop with handle_call / handle_cast / handle_info.
-// Web runtime: cooperative event-loop.
-// Includes fault-isolation: message budget yielding, execution timeouts,
-// and memory-limit checks at yield points.
+// actojs — GenServer behaviour for building client-server processes.
+// Provides a receive loop with handle_call / handle_cast / handle_info / terminate callbacks.
+// Built-in fault isolation: message-budget yielding, execution timeouts, memory-limit checks.
 
 import type { PID, Ref } from './types';
 import { ActorSystem, type From, type PendingCall, TimeoutError } from './system';
@@ -29,25 +27,56 @@ interface GenStopMsg {
   __stop_ref?: Ref;
 }
 
+/** Callbacks implementing the GenServer behaviour. */
 export interface GenServerCallbacks<S> {
+  /** Initialise the server. Receives the init argument, returns the initial state or { ok: state } or { error: reason }. */
   init(args: unknown): S | { ok: S } | { error: unknown; reason?: unknown } | Promise<S | { ok: S } | { error: unknown; reason?: unknown }>;
+  /** Handle a synchronous call. Must return { reply, state } or { noreply, state } for deferred replies via reply(). */
   handle_call?(msg: unknown, from: From, state: S, myPid: PID): { reply: unknown; state: S } | { noreply: unknown; state: S } | Promise<{ reply: unknown; state: S } | { noreply: unknown; state: S }>;
+  /** Handle an asynchronous cast. No reply is sent to the caller. */
   handle_cast?(msg: unknown, state: S, myPid: PID): { noreply: unknown; state: S } | Promise<{ noreply: unknown; state: S }>;
+  /** Handle all other messages sent to the process (e.g. DOWN, EXIT, user messages). */
   handle_info?(msg: unknown, state: S, myPid: PID): { noreply: unknown; state: S } | Promise<{ noreply: unknown; state: S }>;
+  /** Cleanup invoked before the process exits. Return value is ignored. */
   terminate?(reason: unknown, state: S): void | Promise<void>;
 }
 
+/** Exit information stored in the process dictionary during termination. */
 export interface TerminateInfo {
   reason: unknown;
   exitType: 'stop' | 'exit' | 'shutdown';
 }
 
-// ---- start (async) -------------------------------------------------------
+/** Options for start() / start_link(). */
+export interface StartOpts {
+  /** Register the process under this local name on start. */
+  name?: string;
+}
 
-export async function startGenServer<S>(
+// ---- start / start_link ---------------------------------------------------
+
+/** Start a GenServer process without linking to the caller. */
+export async function start<S>(
   callbacks: GenServerCallbacks<S>,
   initArg: unknown,
-  opts?: { name?: string; link?: boolean },
+  opts?: StartOpts,
+): Promise<{ ok: PID } | { error: Error }> {
+  return _startGenServer(callbacks, initArg, { ...opts, link: false });
+}
+
+/** Start a GenServer process and link it to the caller. */
+export async function start_link<S>(
+  callbacks: GenServerCallbacks<S>,
+  initArg: unknown,
+  opts?: StartOpts,
+): Promise<{ ok: PID } | { error: Error }> {
+  return _startGenServer(callbacks, initArg, { ...opts, link: true });
+}
+
+async function _startGenServer<S>(
+  callbacks: GenServerCallbacks<S>,
+  initArg: unknown,
+  opts?: StartOpts & { link?: boolean },
 ): Promise<{ ok: PID } | { error: Error }> {
   let initDone: () => void;
   let initFailed: (err: Error) => void;
@@ -83,18 +112,15 @@ export async function startGenServer<S>(
 
     initDone();
 
-    // Resolve the current ActorSystem once for the lifetime of the loop.
     const sys = ActorSystem.current;
 
     const loop = async () => {
       while (Proc.alive(me)) {
-        // Try synchronous dequeue first; only block on await if mailbox is empty.
         let msg = sys.shiftMessage(me);
         if (msg === undefined) {
           msg = await M.receiveMessage(me);
         }
 
-        // Dispatch — no per-message yield; batch-drain via the outer while.
         if (msg && typeof msg === 'object' && msg !== null) {
           const tagged = msg as { __gen_server__?: string; replyTo?: PID; ref?: Ref };
 
@@ -191,7 +217,6 @@ export async function startGenServer<S>(
           } catch (_) {}
         }
 
-        // Only yield at budget boundaries, not after every single message.
         if (sys.countMessage(me)) {
           await sys.doYield(me);
         }
@@ -216,7 +241,7 @@ export async function startGenServer<S>(
   return { ok: pid };
 }
 
-// ---- Call / Cast / Stop helpers ------------------------------------------
+// ---- call / cast / stop / reply -------------------------------------------
 
 function resolvePending(ref: Ref, result: { ok: unknown } | { error: unknown }): void {
   const sys = ActorSystem.current;
@@ -231,7 +256,8 @@ function resolvePending(ref: Ref, result: { ok: unknown } | { error: unknown }):
   }
 }
 
-export function genCall(pid: PID, msg: unknown, timeout?: number): Promise<unknown> {
+/** Make a synchronous call to a GenServer and wait for the reply. */
+export function call(pid: PID, msg: unknown, timeout?: number): Promise<unknown> {
   const ref: Ref = Symbol('gen_call');
   let replyTo: PID | null = null;
   try { replyTo = Proc.self(); } catch (_) { /* outside process, no replyTo */ }
@@ -255,19 +281,18 @@ export function genCall(pid: PID, msg: unknown, timeout?: number): Promise<unkno
   return promise;
 }
 
-export function genCast(pid: PID, msg: unknown): void {
+/** Cast a fire-and-forget message to a GenServer. Returns immediately. */
+export function cast(pid: PID, msg: unknown): void {
   Proc.send(pid, { __gen_server__: 'cast', payload: msg });
 }
 
-// ---- reply (deferred) ----------------------------------------------------
-
+/** Send a deferred reply to a client that made a call. */
 export function reply(from: From, msg: unknown): void {
   resolvePending(from.ref, { ok: msg });
 }
 
-// ---- stop ----------------------------------------------------------------
-
-export function genStop(pid: PID, reason?: unknown, timeout?: number): Promise<void> {
+/** Stop a GenServer gracefully, calling terminate before exit. Returns when the process exits. */
+export function stop(pid: PID, reason?: unknown, timeout?: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const ref: Ref = Symbol('gen_stop');
     const pending: PendingCall = { resolve: resolve as (v: unknown) => void, reject };

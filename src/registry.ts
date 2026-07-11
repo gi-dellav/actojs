@@ -55,7 +55,7 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
     meta: opts.meta ?? {},
   };
 
-  return GS.startGenServer<RegistryState>(
+  return GS.start_link<RegistryState>(
     {
       init(): RegistryState {
         return initState;
@@ -262,12 +262,12 @@ export function register(
   value: unknown,
   timeout?: number,
 ): Promise<{ ok: PID } | { error: string }> {
-  return GS.genCall(reg, { type: 'register', payload: { key, value } }, timeout) as Promise<{ ok: PID } | { error: string }>;
+  return GS.call(reg, { type: 'register', payload: { key, value } }, timeout) as Promise<{ ok: PID } | { error: string }>;
 }
 
 /** Remove the caller's registration for the given key. */
 export function unregister(reg: PID, key: string, timeout?: number): Promise<void> {
-  return GS.genCall(reg, { type: 'unregister', payload: { key } }, timeout) as Promise<void>;
+  return GS.call(reg, { type: 'unregister', payload: { key } }, timeout) as Promise<void>;
 }
 
 /** Return all {pid, value} entries registered under the given key. */
@@ -276,7 +276,7 @@ export function lookup(
   key: string,
   timeout?: number,
 ): Promise<{ pid: PID; value: unknown }[]> {
-  return GS.genCall(reg, { type: 'lookup', payload: { key } }, timeout) as Promise<{ pid: PID; value: unknown }[]>;
+  return GS.call(reg, { type: 'lookup', payload: { key } }, timeout) as Promise<{ pid: PID; value: unknown }[]>;
 }
 
 /** Find entries whose values match a pattern object, with optional guard functions. */
@@ -287,7 +287,7 @@ export function match(
   guards?: (value: unknown) => boolean,
   timeout?: number,
 ): Promise<{ pid: PID; value: unknown }[]> {
-  return GS.genCall(reg, { type: 'match', payload: { key, pattern, guards } }, timeout) as Promise<{ pid: PID; value: unknown }[]>;
+  return GS.call(reg, { type: 'match', payload: { key, pattern, guards } }, timeout) as Promise<{ pid: PID; value: unknown }[]>;
 }
 
 /** Invoke a callback for each entry under the key, up to an optional limit. */
@@ -298,22 +298,22 @@ export function dispatch(
   opts?: { limit?: number },
   timeout?: number,
 ): Promise<void> {
-  return GS.genCall(reg, { type: 'dispatch', payload: { key, callback, opts } }, timeout) as Promise<void>;
+  return GS.call(reg, { type: 'dispatch', payload: { key, callback, opts } }, timeout) as Promise<void>;
 }
 
 /** Return all keys under which the given PID is registered. */
 export function keys(reg: PID, pid: PID, timeout?: number): Promise<string[]> {
-  return GS.genCall(reg, { type: 'keys', payload: { pid } }, timeout) as Promise<string[]>;
+  return GS.call(reg, { type: 'keys', payload: { pid } }, timeout) as Promise<string[]>;
 }
 
 /** Return all values associated with a specific PID under the given key. */
 export function values(reg: PID, key: string, pid: PID, timeout?: number): Promise<unknown[]> {
-  return GS.genCall(reg, { type: 'values', payload: { key, pid } }, timeout) as Promise<unknown[]>;
+  return GS.call(reg, { type: 'values', payload: { key, pid } }, timeout) as Promise<unknown[]>;
 }
 
 /** Return the total number of registered entries across all partitions. */
 export function count(reg: PID, timeout?: number): Promise<number> {
-  return GS.genCall(reg, { type: 'count', payload: {} }, timeout) as Promise<number>;
+  return GS.call(reg, { type: 'count', payload: {} }, timeout) as Promise<number>;
 }
 
 /** Atomically update the value for the caller's registration under the given key. */
@@ -323,5 +323,5 @@ export function update_value(
   fn: (value: unknown) => unknown,
   timeout?: number,
 ): Promise<{ newValue: unknown; oldValue: unknown } | { error: string }> {
-  return GS.genCall(reg, { type: 'update_value', payload: { key, fn } }, timeout) as Promise<{ newValue: unknown; oldValue: unknown } | { error: string }>;
+  return GS.call(reg, { type: 'update_value', payload: { key, fn } }, timeout) as Promise<{ newValue: unknown; oldValue: unknown } | { error: string }>;
 }

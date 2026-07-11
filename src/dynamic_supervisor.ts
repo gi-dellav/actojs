@@ -92,7 +92,7 @@ async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnSt
     isShuttingDown: false,
   };
 
-  const result = GS.startGenServer<DynamicSupervisorState>(
+  const result = GS.start_link<DynamicSupervisorState>(
     {
       init(_args: unknown): DynamicSupervisorState {
         return initState;
@@ -218,7 +218,7 @@ export function init(opts: SupervisorInitOptions = { strategy: 'one_for_one' }):
 
 /** Spawn a new child under the dynamic supervisor at runtime. */
 export function start_child(sup: PID, spec: ChildSpec, timeout?: number): Promise<OnStartChild> {
-  return GS.genCall(sup, { type: 'start_child', payload: spec }, timeout) as Promise<OnStartChild>;
+  return GS.call(sup, { type: 'start_child', payload: spec }, timeout) as Promise<OnStartChild>;
 }
 
 /** Stop a child by its PID and remove it from the supervisor. */
@@ -227,22 +227,22 @@ export function terminate_child(
   pid: PID,
   timeout?: number,
 ): Promise<void | { error: string }> {
-  return GS.genCall(sup, { type: 'terminate_child', payload: pid }, timeout) as Promise<void | { error: string }>;
+  return GS.call(sup, { type: 'terminate_child', payload: pid }, timeout) as Promise<void | { error: string }>;
 }
 
 /** Return counts of specs, active children, supervisors, and workers. */
 export function count_children(sup: PID, timeout?: number): Promise<Counts> {
-  return GS.genCall(sup, { type: 'count_children', payload: null }, timeout) as Promise<Counts>;
+  return GS.call(sup, { type: 'count_children', payload: null }, timeout) as Promise<Counts>;
 }
 
 /** Return information about all alive children managed by the supervisor. */
 export function which_children(sup: PID, timeout?: number): Promise<ChildInfo[]> {
-  return GS.genCall(sup, { type: 'which_children', payload: null }, timeout) as Promise<ChildInfo[]>;
+  return GS.call(sup, { type: 'which_children', payload: null }, timeout) as Promise<ChildInfo[]>;
 }
 
 /** Gracefully shut down the dynamic supervisor and all its children. */
 export async function stop(sup: PID, reason?: unknown, timeout?: number): Promise<void> {
-  await GS.genCall(sup, { type: 'stop', payload: { reason } }, timeout);
+  await GS.call(sup, { type: 'stop', payload: { reason } }, timeout);
 }
 
 // ---- helpers --------------------------------------------------------------

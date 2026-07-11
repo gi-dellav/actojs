@@ -97,7 +97,7 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
     isShuttingDown: false,
   };
 
-  const result = GS.startGenServer<SupervisorState>(
+  const result = GS.start_link<SupervisorState>(
     {
       async init(_args: unknown): Promise<{ ok: SupervisorState } | { error: unknown }> {
         const supPid = Proc.self();
@@ -329,17 +329,17 @@ export function child_spec(
 
 /** Return counts of specs, active children, supervisors, and workers. */
 export function count_children(sup: PID, timeout?: number): Promise<Counts> {
-  return GS.genCall(sup, { type: 'count_children', payload: null }, timeout) as Promise<Counts>;
+  return GS.call(sup, { type: 'count_children', payload: null }, timeout) as Promise<Counts>;
 }
 
 /** Return information about all alive children managed by the supervisor. */
 export function which_children(sup: PID, timeout?: number): Promise<ChildInfo[]> {
-  return GS.genCall(sup, { type: 'which_children', payload: null }, timeout) as Promise<ChildInfo[]>;
+  return GS.call(sup, { type: 'which_children', payload: null }, timeout) as Promise<ChildInfo[]>;
 }
 
 /** Dynamically add a new child to the supervisor at runtime. */
 export function start_child(sup: PID, spec: ChildSpec, timeout?: number): Promise<OnStartChild> {
-  return GS.genCall(sup, { type: 'start_child', payload: spec }, timeout) as Promise<OnStartChild>;
+  return GS.call(sup, { type: 'start_child', payload: spec }, timeout) as Promise<OnStartChild>;
 }
 
 /** Stop a child by its spec id, respecting the shutdown value from its ChildSpec. */
@@ -348,7 +348,7 @@ export function terminate_child(
   childId: string,
   timeout?: number,
 ): Promise<void | { error: string }> {
-  return GS.genCall(sup, { type: 'terminate_child', payload: childId }, timeout) as Promise<void | { error: string }>;
+  return GS.call(sup, { type: 'terminate_child', payload: childId }, timeout) as Promise<void | { error: string }>;
 }
 
 /** Remove a child's spec from the supervisor. Fails if the child is still running. */
@@ -357,17 +357,17 @@ export function delete_child(
   childId: string,
   timeout?: number,
 ): Promise<void | { error: string }> {
-  return GS.genCall(sup, { type: 'delete_child', payload: childId }, timeout) as Promise<void | { error: string }>;
+  return GS.call(sup, { type: 'delete_child', payload: childId }, timeout) as Promise<void | { error: string }>;
 }
 
 /** Stop and restart a child by its spec id. */
 export function restart_child(sup: PID, childId: string, timeout?: number): Promise<OnStartChild> {
-  return GS.genCall(sup, { type: 'restart_child', payload: childId }, timeout) as Promise<OnStartChild>;
+  return GS.call(sup, { type: 'restart_child', payload: childId }, timeout) as Promise<OnStartChild>;
 }
 
 /** Gracefully shut down the supervisor and all its children. */
 export async function stop(sup: PID, reason?: unknown, timeout?: number): Promise<void> {
-  await GS.genCall(sup, { type: 'stop', payload: { reason } }, timeout);
+  await GS.call(sup, { type: 'stop', payload: { reason } }, timeout);
 }
 
 // ---- internal helpers -----------------------------------------------------

@@ -5,6 +5,7 @@ export * as Task from './task';
 export * as Registry from './registry';
 export * as Supervisor from './supervisor';
 export * as DynamicSupervisor from './dynamic_supervisor';
+export * as GenServer from './gen_server';
 export * as Node from './node';
 export * as Core from './core';
 

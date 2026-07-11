@@ -11,10 +11,10 @@ beforeEach(() => {
   }
 });
 
-describe('gen_server', () => {
-  describe('startGenServer', () => {
+describe('GenServer', () => {
+  describe('start', () => {
     test('starts and returns PID via { ok: PID }', async () => {
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() {
           return { counter: 0 };
         },
@@ -26,7 +26,7 @@ describe('gen_server', () => {
     });
 
     test('handles async init', async () => {
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         async init() {
           await sleep(5);
           return { ready: true };
@@ -36,7 +36,7 @@ describe('gen_server', () => {
     });
 
     test('handles { ok: state } init return', async () => {
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() {
           return { ok: { value: 42 } };
         },
@@ -45,7 +45,7 @@ describe('gen_server', () => {
     });
 
     test('handles { error: reason } init return', async () => {
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() {
           return { error: 'bad_arg' };
         },
@@ -54,7 +54,7 @@ describe('gen_server', () => {
     });
 
     test('handles init throwing', async () => {
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() {
           throw new Error('boom');
         },
@@ -66,23 +66,23 @@ describe('gen_server', () => {
     });
 
     test('with name option, process registers itself', async () => {
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() { return {}; },
       }, null, { name: 'my_gen' });
       expect('ok' in result).toBe(true);
       expect(Process.whereis('my_gen')).toBe((result as any).ok);
     });
 
-    test('with link option, uses spawn_link', async () => {
+    test('start_link links to caller', async () => {
       const callerPid = 'gs_caller';
       const procCaller = M.createProcess(callerPid);
       procCaller.status = 'alive';
       M.registerProcess(callerPid, procCaller);
       M.pushPid(callerPid);
 
-      const result = await GS.startGenServer({
+      const result = await GS.start_link({
         init() { return {}; },
-      }, null, { link: true });
+      }, null);
 
       M.popPid();
 
@@ -94,9 +94,9 @@ describe('gen_server', () => {
     });
   });
 
-  describe('genCall', () => {
+  describe('call', () => {
     test('calls handle_call and gets reply', async () => {
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() { return { count: 0 }; },
         handle_call(msg: any, _from: any, state: any, _myPid: any) {
           if (msg.type === 'inc') {
@@ -108,27 +108,25 @@ describe('gen_server', () => {
       if ('error' in result) throw result.error;
       const pid = result.ok;
 
-      const reply = await GS.genCall(pid, { type: 'inc' });
+      const reply = await GS.call(pid, { type: 'inc' });
       expect(reply).toBe(1);
     });
 
-    test('genCall with timeout rejects if no reply', async () => {
-      const result = await GS.startGenServer({
+    test('call with timeout rejects if no reply', async () => {
+      const result = await GS.start({
         init() { return {}; },
         handle_call(_msg: any, _from: any, state: any) {
-          // Never calls resolvePending — simulates hung handler
           return { reply: 'will_reply', state };
         },
       }, null);
       if ('error' in result) throw result.error;
 
-      // The handler above does reply, but if timeout is 1ms it should work
-      const reply = await GS.genCall(result.ok, { type: 'ping' }, 1000);
+      const reply = await GS.call(result.ok, { type: 'ping' }, 1000);
       expect(reply).toBe('will_reply');
     });
 
-    test('genCall from outside a process still works', async () => {
-      const result = await GS.startGenServer({
+    test('call from outside a process still works', async () => {
+      const result = await GS.start({
         init() { return {}; },
         handle_call(_msg: any, _from: any, state: any) {
           return { reply: 'ok', state };
@@ -136,13 +134,12 @@ describe('gen_server', () => {
       }, null);
       if ('error' in result) throw result.error;
 
-      const reply = await GS.genCall(result.ok, { type: 'ping' });
+      const reply = await GS.call(result.ok, { type: 'ping' });
       expect(reply).toBe('ok');
     });
 
-    test('handle_call returning error via resolvePending', async () => {
-      // handle_call throws -> caught as { error: err }
-      const result = await GS.startGenServer({
+    test('handle_call throwing rejects the call', async () => {
+      const result = await GS.start({
         init() { return {}; },
         handle_call(_msg: any, _from: any, state: any) {
           throw new Error('handler error');
@@ -150,14 +147,14 @@ describe('gen_server', () => {
       }, null);
       if ('error' in result) throw result.error;
 
-      await expect(GS.genCall(result.ok, { type: 'bad' })).rejects.toThrow('handler error');
+      await expect(GS.call(result.ok, { type: 'bad' })).rejects.toThrow('handler error');
     });
   });
 
-  describe('genCast', () => {
+  describe('cast', () => {
     test('calls handle_cast and does not reply', async () => {
       let castReceived = false;
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() { return { count: 0 }; },
         handle_cast(msg: any, state: any) {
           if (msg.type === 'inc') {
@@ -169,28 +166,28 @@ describe('gen_server', () => {
       }, null);
       if ('error' in result) throw result.error;
 
-      GS.genCast(result.ok, { type: 'inc' });
+      GS.cast(result.ok, { type: 'inc' });
       await sleep(20);
       expect(castReceived).toBe(true);
     });
   });
 
-  describe('genStop', () => {
+  describe('stop', () => {
     test('stops the server', async () => {
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() { return {}; },
       }, null);
       if ('error' in result) throw result.error;
       const pid = result.ok;
 
       expect(Process.alive(pid)).toBe(true);
-      await GS.genStop(pid);
+      await GS.stop(pid);
       expect(Process.alive(pid)).toBe(false);
     });
 
     test('calls terminate callback on stop', async () => {
       let terminated = false;
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() { return {}; },
         terminate(_reason: any, _state: any) {
           terminated = true;
@@ -198,7 +195,7 @@ describe('gen_server', () => {
       }, null);
       if ('error' in result) throw result.error;
 
-      await GS.genStop(result.ok);
+      await GS.stop(result.ok);
       expect(terminated).toBe(true);
     });
   });
@@ -206,7 +203,7 @@ describe('gen_server', () => {
   describe('handle_info', () => {
     test('dispatches non-tagged messages to handle_info', async () => {
       let infoReceived: unknown;
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() { return {}; },
         handle_info(msg: any, state: any) {
           infoReceived = msg;
@@ -224,7 +221,7 @@ describe('gen_server', () => {
   describe('deferred reply (noreply + GenServer.reply)', () => {
     test('handle_call returning { noreply } does not resolve the call', async () => {
       let savedFrom: any;
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() { return { count: 0 }; },
         handle_call(msg: any, from: any, state: any) {
           if (msg.type === 'defer') {
@@ -236,16 +233,14 @@ describe('gen_server', () => {
       }, null);
       if ('error' in result) throw result.error;
 
-      // This call should hang (not resolve immediately)
-      const callPromise = GS.genCall(result.ok, { type: 'defer' }, 500);
+      const callPromise = GS.call(result.ok, { type: 'defer' }, 500);
 
-      // It should eventually timeout
       await expect(callPromise).rejects.toThrow(TimeoutError);
     });
 
     test('GenServer.reply resolves a deferred call', async () => {
       let savedFrom: any;
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() { return { count: 0 }; },
         handle_call(msg: any, from: any, state: any) {
           if (msg.type === 'defer') {
@@ -261,10 +256,9 @@ describe('gen_server', () => {
       }, null);
       if ('error' in result) throw result.error;
 
-      const callPromise = GS.genCall(result.ok, { type: 'defer' }, 1000);
+      const callPromise = GS.call(result.ok, { type: 'defer' }, 1000);
       await sleep(10);
-      // Send a call to trigger the deferred reply (must be a call since handle_call is used)
-      await GS.genCall(result.ok, { type: 'resolve' });
+      await GS.call(result.ok, { type: 'resolve' });
 
       const val = await callPromise;
       expect(val).toBe('deferred_result');
@@ -273,7 +267,7 @@ describe('gen_server', () => {
     test('GenServer.reply from info handler', async () => {
       let savedFrom: any;
       let pid: string = '';
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() { return {}; },
         handle_call(msg: any, from: any, state: any) {
           savedFrom = from;
@@ -287,7 +281,7 @@ describe('gen_server', () => {
       if ('error' in result) throw result.error;
       pid = result.ok;
 
-      const callPromise = GS.genCall(pid, { type: 'wait' }, 1000);
+      const callPromise = GS.call(pid, { type: 'wait' }, 1000);
       await sleep(5);
       Process.send(pid, { wake: true });
 
@@ -297,7 +291,7 @@ describe('gen_server', () => {
 
     test('resolvePending is safe when called multiple times', async () => {
       let savedFrom: any;
-      const result = await GS.startGenServer({
+      const result = await GS.start({
         init() { return {}; },
         handle_call(msg: any, from: any, state: any) {
           if (msg.type === 'defer') {
@@ -309,17 +303,15 @@ describe('gen_server', () => {
       }, null);
       if ('error' in result) throw result.error;
 
-      const promise = GS.genCall(result.ok, { type: 'defer' }, 500);
+      const promise = GS.call(result.ok, { type: 'defer' }, 500);
 
       await sleep(5);
 
-      // Multiple replies should not crash
       expect(() => {
         GS.reply(savedFrom, 'first');
         GS.reply(savedFrom, 'second');
       }).not.toThrow();
 
-      // First reply wins
       const val = await promise;
       expect(val).toBe('first');
     });
