@@ -4,6 +4,7 @@
 import type { PID, Ref, Dest, SpawnOpt, SpawnOptions, ProcessLimits, ProcessInfo } from './types';
 import { ActorSystem } from './system';
 import * as M from './mailbox';
+import { getRuntime } from './core';
 
 export { TimeoutError } from './system';
 export type { ProcessLimits, SpawnOptions } from './types';
@@ -13,8 +14,15 @@ export type { ProcessLimits, SpawnOptions } from './types';
 /**
  * Spawn a new process running the given function asynchronously.
  * Supports link/monitor options and per-process resource limits.
+ * When a WorkerRuntime is active, delegates to the runtime's spawn.
  */
 export function spawn(fn: () => void | Promise<void>, opts?: SpawnOpt[] | SpawnOptions): PID {
+  const rt = getRuntime();
+  if (rt.spawnProcess) {
+    const pid = rt.spawnProcess(fn, opts);
+    if (pid != null) return pid;
+  }
+
   const sys = ActorSystem.current;
   const pid = sys.generatePid();
   const proc = sys.createProcess(pid);

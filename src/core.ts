@@ -3,8 +3,9 @@
 // ponytail: pluggable runtimes for Node/Bun/Deno true parallelism.
 
 export { ActorSystem } from './system';
-import { ActorSystem } from './system';
+import { ActorSystem as AS } from './system';
 export type { ProcessLimits, SpawnOptions } from './types';
+import type { PID, SpawnOpt, SpawnOptions } from './types';
 
 /**
  * Runtime abstraction for pluggable execution environments.
@@ -13,6 +14,8 @@ export type { ProcessLimits, SpawnOptions } from './types';
 export interface Runtime {
   /** Human-readable name of the runtime backend (e.g. "web", "node-worker"). */
   name: string;
+  /** Optionally provide an alternative spawn implementation. */
+  spawnProcess?(fn: () => void | Promise<void>, opts?: SpawnOpt[] | SpawnOptions): PID | undefined;
 }
 
 /**
@@ -22,6 +25,8 @@ export interface Runtime {
 export class WebRuntime implements Runtime {
   name = 'web';
 }
+
+export { WorkerRuntime } from './worker_runtime';
 
 let currentRuntime: Runtime = new WebRuntime();
 
@@ -38,5 +43,5 @@ export function getRuntime(): Runtime {
 // Whether process.memoryUsage() is available (Node, Bun, Deno).
 // False in browsers where process is undefined.
 export function hasMemoryAPI(): boolean {
-  return ActorSystem.hasMemoryAPI;
+  return AS.hasMemoryAPI;
 }
