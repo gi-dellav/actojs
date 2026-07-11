@@ -11,6 +11,8 @@ export * as Node from './node';
 export * as Core from './core';
 export * as PubSub from './pubsub';
 export * as EventStream from './event_stream';
+export * as System from './system';
+export * as Internals from './internals';
 
 export { WebRuntime, WorkerRuntime, ActorSystem } from './core';
 export { NodeRuntime } from './node_runtime';

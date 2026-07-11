@@ -16,7 +16,11 @@
     "./system": "./src/system.ts",
     "./pubsub": "./src/pubsub.ts",
     "./event_stream": "./src/event_stream.ts",
-    "./node_runtime": "./src/node_runtime.ts"
+    "./gen_server": "./src/gen_server.ts",
+    "./task_supervisor": "./src/task_supervisor.ts",
+    "./node_runtime": "./src/node_runtime.ts",
+    "./internals": "./src/internals.ts",
+    "./internals/mailbox": "./src/mailbox.ts"
   },
   "scripts": {
     "build:docs": "typedoc",
