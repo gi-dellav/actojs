@@ -15,7 +15,8 @@
     "./core": "./src/core.ts",
     "./system": "./src/system.ts",
     "./pubsub": "./src/pubsub.ts",
-    "./event_stream": "./src/event_stream.ts"
+    "./event_stream": "./src/event_stream.ts",
+    "./node_runtime": "./src/node_runtime.ts"
   },
   "scripts": {
     "build:docs": "typedoc",

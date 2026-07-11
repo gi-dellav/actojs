@@ -14,3 +14,4 @@ export * as PubSub from './src/pubsub';
 export * as EventStream from './src/event_stream';
 
 export { WebRuntime, ActorSystem } from './src/core';
+export { NodeRuntime } from './src/node_runtime';
