@@ -20,7 +20,7 @@ import { ActorSystem } from "./system";
 import * as Proc from "./process";
 import * as GS from "./gen_server";
 
-interface SupervisorModule {
+export interface SupervisorModule {
   init: (arg?: unknown) => SupervisorSpec;
 }
 

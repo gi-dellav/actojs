@@ -5,8 +5,8 @@ import type { PID, OnStart, MFA, Module } from "./types";
 import type { From } from "./system";
 import * as GS from "./gen_server";
 
-type AgentFn<S, R = unknown> = (state: S) => R;
-type AgentArg<S, R = unknown> = AgentFn<S, R> | MFA; // fn or [module, fnName, args]
+export type AgentFn<S, R = unknown> = (state: S) => R;
+export type AgentArg<S, R = unknown> = AgentFn<S, R> | MFA;
 
 // ---- resolve agent PID ----------------------------------------------------
 

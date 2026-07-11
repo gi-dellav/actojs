@@ -12,7 +12,7 @@ import type { From } from "./system";
 import * as Proc from "./process";
 import * as GS from "./gen_server";
 
-type RegistryCallback = (pid: PID, value: unknown) => void;
+export type RegistryCallback = (pid: PID, value: unknown) => void;
 
 interface RegistryEntry {
   pid: PID;
