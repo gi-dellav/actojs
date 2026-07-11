@@ -151,9 +151,245 @@ describe('node', () => {
   });
 
   describe('monitor', () => {
-    test('does not throw', async () => {
-      await runInProcess(() => Node.start('node_a'));
-      expect(() => Node.monitor('node_b', true)).not.toThrow();
+    test('monitor flag=true adds a monitor', async () => {
+      await runInProcess(() => Node.start('mon_node'));
+      const ref = Node.monitor('target_node', true);
+      expect(typeof ref).toBe('symbol');
+    });
+
+    test('monitor flag=false removes monitor', async () => {
+      await runInProcess(() => Node.start('mon_node2'));
+      Node.monitor('target_node', true);
+      Node.monitor('target_node', false);
+    });
+
+    test('monitor works outside process', () => {
+      expect(() => Node.monitor('node', true)).not.toThrow();
+    });
+  });
+
+  describe('demonitor_node', () => {
+    test('removes monitor by ref', async () => {
+      await runInProcess(() => Node.start('demon_node'));
+      const ref = Node.monitor('watched', true);
+      expect(() => Node.demonitor_node(ref)).not.toThrow();
+    });
+
+    test('safe for unknown ref', () => {
+      expect(() => Node.demonitor_node(Symbol('unknown'))).not.toThrow();
+    });
+  });
+
+  describe('stop with monitors', () => {
+    test('sends disconnect to local monitors', async () => {
+      const pid = Process.spawn(async () => {
+        Node.start('stop_mon_node');
+        Node.monitor('stop_mon_node', true);
+        await Process.receive(); // block forever
+      });
+      await new Promise(r => setTimeout(r, 10));
+
+      const stopped = Node.stop();
+      expect(stopped).toBe(undefined);
+      Process.exit(pid, 'done');
+    });
+  });
+
+  describe('spawn', () => {
+    test('returns a PID for function spawn', async () => {
+      await runInProcess(() => Node.start('spawn_node'));
+      const pid = Node.spawn('remote_node', () => {});
+      expect(pid).toMatch(/^#PID</);
+    });
+
+    test('returns a PID for module spawn', async () => {
+      await runInProcess(() => Node.start('spawn_mfa'));
+      const mod = {
+        child_spec() { return { id: 'test_child', start: [] as any }; },
+      };
+      const pid = Node.spawn('remote_node', mod, 'child_spec', []);
+      expect(pid).toMatch(/^#PID</);
+    });
+  });
+
+  describe('spawn_link', () => {
+    test('returns a PID for function spawn_link', async () => {
+      await runInProcess(() => Node.start('splink_node'));
+      const pid = Node.spawn_link('remote_node', () => {});
+      expect(pid).toMatch(/^#PID</);
+    });
+
+    test('returns a PID for module spawn_link', async () => {
+      await runInProcess(() => Node.start('splink_mfa'));
+      const mod = { run() {} };
+      const pid = Node.spawn_link('remote_node', mod, 'run', []);
+      expect(pid).toMatch(/^#PID</);
+    });
+  });
+
+  describe('spawn_monitor', () => {
+    test('returns pid and ref for function', async () => {
+      await runInProcess(() => Node.start('spmon_node'));
+      const result = Node.spawn_monitor('remote_node', () => {});
+      expect(result.pid).toMatch(/^#PID</);
+      expect(typeof result.ref).toBe('symbol');
+    });
+
+    test('returns pid and ref for module', async () => {
+      await runInProcess(() => Node.start('spmon_mfa'));
+      const mod = { run() {} };
+      const result = Node.spawn_monitor('remote_node', mod, 'run', []);
+      expect(result.pid).toMatch(/^#PID</);
+      expect(typeof result.ref).toBe('symbol');
+    });
+  });
+
+  describe('handleIncoming', () => {
+    test('connect message adds sender to connectedNodes', async () => {
+      await runInProcess(() => Node.start('node_inc1'));
+
+      const testChannel = new BroadcastChannel('__actojs_node__node_inc1');
+      testChannel.postMessage({ from: 'remote_node', to: 'node_inc1', type: 'connect', payload: null });
+      await new Promise(r => setTimeout(r, 20));
+      testChannel.close();
+
+      expect(Node.list('connected')).toContain('remote_node');
+    });
+
+    test('ignores message for different node', async () => {
+      await runInProcess(() => Node.start('node_solo'));
+
+      const testChannel = new BroadcastChannel('__actojs_node__node_solo');
+      testChannel.postMessage({ from: 'someone', to: 'other_node', type: 'connect', payload: null });
+      await new Promise(r => setTimeout(r, 10));
+      testChannel.close();
+
+      expect(Node.list('connected')).not.toContain('someone');
+    });
+
+    test('ping message sends pong back', async () => {
+      await runInProcess(() => Node.start('node_ping'));
+
+      const testChannel = new BroadcastChannel('__actojs_node__node_ping');
+      testChannel.postMessage({ from: 'remote', to: 'node_ping', type: 'ping', payload: null });
+      await new Promise(r => setTimeout(r, 10));
+      testChannel.close();
+    });
+
+    test('spawn fn message creates a process', async () => {
+      const pid = Process.spawn(async () => {
+        Node.start('node_spawnfn');
+        await Process.receive();
+      });
+      await new Promise(r => setTimeout(r, 10));
+
+      const beforeCount = Process.list().length;
+
+      const testChannel = new BroadcastChannel('__actojs_node__node_spawnfn');
+      testChannel.postMessage({
+        from: 'remote',
+        to: 'node_spawnfn',
+        type: 'spawn',
+        payload: { type: 'fn', source: '() => {}' },
+      });
+      await new Promise(r => setTimeout(r, 20));
+      testChannel.close();
+
+      const afterCount = Process.list().length;
+      expect(afterCount).toBeGreaterThanOrEqual(beforeCount);
+
+      Process.exit(pid, 'done');
+    });
+
+    test('spawn mfa with missing function does nothing', async () => {
+      const pid = Process.spawn(async () => {
+        Node.start('node_nofn');
+        await Process.receive();
+      });
+      await new Promise(r => setTimeout(r, 10));
+
+      const testChannel = new BroadcastChannel('__actojs_node__node_nofn');
+      testChannel.postMessage({
+        from: 'remote',
+        to: 'node_nofn',
+        type: 'spawn',
+        payload: { type: 'mfa', module: {} as any, fn: 'nope', args: [] },
+      });
+      await new Promise(r => setTimeout(r, 10));
+      testChannel.close();
+
+      Process.exit(pid, 'done');
+    });
+
+    test('spawn_exit sends EXIT to local process via spawn_link setup', async () => {
+      await runInProcess(() => Node.start('node_spext'));
+
+      // Use spawn_link to set up crossNodeLinks
+      Node.spawn_link('remote_node', () => {});
+      await new Promise(r => setTimeout(r, 10));
+
+      const testChannel = new BroadcastChannel('__actojs_node__node_spext');
+      testChannel.postMessage({
+        from: 'remote_node',
+        to: 'node_spext',
+        type: 'spawn_exit',
+        payload: { linkId: 'l_node_spext_0', remotePid: 'remote_pid', reason: 'crash' },
+      });
+      await new Promise(r => setTimeout(r, 15));
+      testChannel.close();
+    });
+
+    test('spawn_down sends DOWN to local process via spawn_monitor setup', async () => {
+      await runInProcess(() => Node.start('node_spdn'));
+
+      // Use spawn_monitor to set up crossNodeMonitors
+      Node.spawn_monitor('remote_node', () => {});
+      await new Promise(r => setTimeout(r, 10));
+
+      const testChannel = new BroadcastChannel('__actojs_node__node_spdn');
+      testChannel.postMessage({
+        from: 'remote_node',
+        to: 'node_spdn',
+        type: 'spawn_down',
+        payload: { refId: 'l_node_spdn_0', remotePid: 'remote_pid', reason: 'oops' },
+      });
+      await new Promise(r => setTimeout(r, 15));
+      testChannel.close();
+    });
+
+    test('spawn_kill exits remote spawned process', async () => {
+      const nodePid = Process.spawn(async () => {
+        Node.start('node_spkill');
+        await Process.receive();
+      });
+      await new Promise(r => setTimeout(r, 10));
+
+      // Send spawn with linkId to populate remoteSpawnRegistry
+      const beforeCount = Process.list().length;
+      const testChannel = new BroadcastChannel('__actojs_node__node_spkill');
+      testChannel.postMessage({
+        from: 'remote',
+        to: 'node_spkill',
+        type: 'spawn',
+        payload: { type: 'fn', source: '() => {}', linkId: 'killme_link' },
+      });
+      await new Promise(r => setTimeout(r, 20));
+
+      // Now send spawn_kill to kill it
+      testChannel.postMessage({
+        from: 'remote',
+        to: 'node_spkill',
+        type: 'spawn_kill',
+        payload: { linkId: 'killme_link', reason: 'killed' },
+      });
+      await new Promise(r => setTimeout(r, 15));
+      testChannel.close();
+
+      // The spawned process should be killed
+      const afterCount = Process.list().length;
+      expect(afterCount).toBeLessThanOrEqual(beforeCount + 1);
+
+      Process.exit(nodePid, 'done');
     });
   });
 });

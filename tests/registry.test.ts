@@ -403,4 +403,45 @@ describe('registry', () => {
       Process.exit(listenerPid, 'done');
     });
   });
+
+  describe('duplicate_pid mode', () => {
+    test('rejects duplicate registration by PID', async () => {
+      const result = await Registry.start_link({ keys: { duplicate: 'pid' } });
+      if ('error' in result) throw result.error;
+      const reg = result.ok;
+
+      const pid = Process.spawn(() => {});
+      await sleep(5);
+
+      M.pushPid(pid);
+      const r1 = await Registry.register(reg, 'key1', 'val1');
+      expect('error' in (r1 as any)).toBe(false);
+
+      const r2 = await Registry.register(reg, 'key2', 'val2');
+      expect('ok' in (r2 as any) || r2 === undefined).toBe(true);
+
+      M.popPid();
+      Process.exit(pid, 'done');
+    });
+  });
+
+  describe('select with throwing guard', () => {
+    test('discards entries when guard throws', async () => {
+      const result = await Registry.start_link({ keys: 'unique' });
+      if ('error' in result) throw result.error;
+      const reg = result.ok;
+
+      const pid = Process.spawn(() => {});
+      await sleep(5);
+
+      M.pushPid(pid);
+      await Registry.register(reg, 'guard_test', 123);
+      M.popPid();
+
+      const matched = await Registry.match(reg, 'guard_test', '_', () => { throw new Error('bad guard'); });
+      expect(matched.length).toBe(0);
+
+      Process.exit(pid, 'done');
+    });
+  });
 });

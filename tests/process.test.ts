@@ -545,4 +545,108 @@ describe('process', () => {
       expect(msg.pid).toBe(pidA);
     });
   });
+
+  describe('spawn with SpawnOptions and limits', () => {
+    test('spawn with object opts and link option', () => {
+      const callerPid = 'obj_link_test';
+      const procCaller = M.createProcess(callerPid);
+      procCaller.status = 'running';
+      M.registerProcess(callerPid, procCaller);
+      M.pushPid(callerPid);
+
+      const pid = Process.spawn(() => {}, { link: true });
+      const spawnedProc = M.getProcess(pid);
+      expect(spawnedProc!.links.has(callerPid)).toBe(true);
+      expect(procCaller.links.has(pid)).toBe(true);
+
+      M.popPid();
+    });
+
+    test('spawn with object opts and monitor option', () => {
+      const callerPid = 'obj_mon_test';
+      const procCaller = M.createProcess(callerPid);
+      procCaller.status = 'running';
+      M.registerProcess(callerPid, procCaller);
+      M.pushPid(callerPid);
+
+      const pid = Process.spawn(() => {}, { monitor: true });
+      const spawnedProc = M.getProcess(pid);
+      expect(spawnedProc!.monitoredBy.has(callerPid)).toBe(true);
+      expect(procCaller.monitors.size).toBe(1);
+
+      M.popPid();
+    });
+
+    test('spawn with process limits', () => {
+      const pid = Process.spawn(() => {}, {
+        limits: {
+          messageBudget: 50,
+          maxMailboxSize: 100,
+          execTimeout: 500,
+          maxMemory: 1024,
+        },
+      });
+      const proc = M.getProcess(pid);
+      expect(proc!.messageBudget).toBe(50);
+      expect(proc!.maxMailboxSize).toBe(100);
+      expect(proc!.execTimeout).toBe(500);
+      expect(proc!.maxMemory).toBe(1024);
+    });
+  });
+
+  describe('flag fault-isolation limits', () => {
+    test('flag message_budget returns previous and sets new', async () => {
+      let prev: any;
+      Process.spawn(() => {
+        prev = Process.flag('message_budget', 200);
+      });
+      await sleep(10);
+      expect(prev).toBe(100);
+    });
+
+    test('flag max_mailbox_size returns previous and sets new', async () => {
+      let prev: any;
+      Process.spawn(() => {
+        prev = Process.flag('max_mailbox_size', 50);
+      });
+      await sleep(10);
+      expect(prev).toBe(0);
+    });
+
+    test('flag exec_timeout returns previous and sets new', async () => {
+      let prev: any;
+      Process.spawn(() => {
+        prev = Process.flag('exec_timeout', 1000);
+      });
+      await sleep(10);
+      expect(prev).toBe(0);
+    });
+
+    test('flag max_memory returns previous and sets new', async () => {
+      let prev: any;
+      Process.spawn(() => {
+        prev = Process.flag('max_memory', 512);
+      });
+      await sleep(10);
+      expect(prev).toBe(0);
+    });
+  });
+
+  describe('unregister', () => {
+    test('clears name from process', async () => {
+      let registered = false;
+      let pid = '';
+      Process.spawn(async () => {
+        pid = Process.self();
+        Process.register(pid, 'to_remove');
+        registered = true;
+        await Process.receive();
+      });
+      await waitFor(() => registered);
+      expect(Process.whereis('to_remove')).toBe(pid);
+
+      Process.unregister('to_remove');
+      expect(Process.whereis('to_remove')).toBeNull();
+    });
+  });
 });

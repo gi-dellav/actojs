@@ -351,5 +351,156 @@ describe('supervisor', () => {
       // The supervisor should shut down after exceeding max_restarts
       expect(Process.alive(result.ok)).toBe(false);
     });
+
+    test('significant child causes supervisor shutdown', async () => {
+      let startCount = 0;
+      const mod = {
+        start_link() {
+          startCount++;
+          const pid = Process.spawn(async () => {
+            if (startCount <= 1) throw new Error('crash');
+            await Process.receive();
+          });
+          return { ok: pid };
+        },
+      };
+      const child = {
+        id: 'important',
+        start: [mod, 'start_link', []] as [any, string, any[]],
+        restart: 'permanent' as const,
+        significant: true,
+      };
+
+      const result = await Supervisor.start_link([child], {
+        strategy: 'one_for_one',
+        max_restarts: 10,
+      });
+      if ('error' in result) throw result.error;
+
+      await sleep(100);
+
+      expect(Process.alive(result.ok)).toBe(false);
+    });
+  });
+
+  describe('restart_child', () => {
+    test('restarts a running child', async () => {
+      const mod = makeWorkerMod();
+      const child = makeChildSpec('r1', mod);
+      const result = await Supervisor.start_link([child], { strategy: 'one_for_one' });
+      if ('error' in result) throw result.error;
+
+      const restartResult = await Supervisor.restart_child(result.ok, 'r1');
+      expect('ok' in restartResult).toBe(true);
+
+      const counts = await Supervisor.count_children(result.ok);
+      expect(counts.active).toBe(1);
+    });
+
+    test('returns error for unknown child', async () => {
+      const mod = makeWorkerMod();
+      const child = makeChildSpec('r1', mod);
+      const result = await Supervisor.start_link([child], { strategy: 'one_for_one' });
+      if ('error' in result) throw result.error;
+
+      const restartResult = await Supervisor.restart_child(result.ok, 'nope');
+      expect('error' in (restartResult as any)).toBe(true);
+    });
+  });
+
+  describe('terminate_child shutdown modes', () => {
+    test('handles brutal_kill shutdown', async () => {
+      const mod = makeWorkerMod();
+      const result = await Supervisor.start_link([
+        { id: 'bk_child', start: [mod, 'start_link', []] as [any, string, any[]],
+          restart: 'permanent', shutdown: 'brutal_kill' },
+      ], { strategy: 'one_for_one' });
+      if ('error' in result) throw result.error;
+
+      const before = await Supervisor.which_children(result.ok);
+      expect(before.length).toBe(1);
+
+      await Supervisor.terminate_child(result.ok, 'bk_child');
+      await sleep(20);
+
+      const counts = await Supervisor.count_children(result.ok);
+      expect(counts.active).toBe(0);
+    });
+
+    test('handles infinity shutdown', async () => {
+      const mod = makeWorkerMod();
+      const result = await Supervisor.start_link([
+        { id: 'inf_child', start: [mod, 'start_link', []] as [any, string, any[]],
+          restart: 'permanent', shutdown: 'infinity' },
+      ], { strategy: 'one_for_one' });
+      if ('error' in result) throw result.error;
+
+      await Supervisor.terminate_child(result.ok, 'inf_child');
+      await sleep(20);
+
+      const counts = await Supervisor.count_children(result.ok);
+      expect(counts.active).toBe(0);
+    });
+  });
+
+  describe('delete_child', () => {
+    test('succeeds when child is not running', async () => {
+      const mod = makeWorkerMod();
+      const child = makeChildSpec('w1', mod);
+      const result = await Supervisor.start_link([child], { strategy: 'one_for_one' });
+      if ('error' in result) throw result.error;
+
+      const children = await Supervisor.which_children(result.ok);
+      Process.exit(children[0]!.pid, 'killed');
+      await sleep(30);
+
+      const delResult = await Supervisor.delete_child(result.ok, 'w1');
+      expect(delResult).toBe(undefined);
+    });
+  });
+
+  describe('child_spec edge cases', () => {
+    test('returns spec with id when id exists', () => {
+      const spec = Supervisor.child_spec({ id: 'custom', start: [] as any });
+      expect(spec.id).toBe('custom');
+    });
+  });
+
+  describe('startChildSpec error paths', () => {
+    test('returns error for null module', async () => {
+      const mod = makeWorkerMod();
+      const child = makeChildSpec('ok_child', mod);
+      const result = await Supervisor.start_link([child], { strategy: 'one_for_one' });
+      if ('error' in result) throw result.error;
+
+      const badChild = { id: 'bad', start: [null, 'start_link', []] as any };
+      const startResult = await Supervisor.start_child(result.ok, badChild);
+      expect('error' in startResult).toBe(true);
+    });
+
+    test('returns error for missing function', async () => {
+      const mod = makeWorkerMod();
+      const child = makeChildSpec('ok_child', mod);
+      const result = await Supervisor.start_link([child], { strategy: 'one_for_one' });
+      if ('error' in result) throw result.error;
+
+      const badChild = { id: 'bad2', start: [mod, 'nonexistent', []] as any };
+      const startResult = await Supervisor.start_child(result.ok, badChild);
+      expect('error' in startResult).toBe(true);
+    });
+
+    test('returns error when start function throws', async () => {
+      const mod = makeWorkerMod();
+      const child = makeChildSpec('ok_child', mod);
+      const result = await Supervisor.start_link([child], { strategy: 'one_for_one' });
+      if ('error' in result) throw result.error;
+
+      const throwerMod = {
+        start_link() { throw new Error('sync throw'); },
+      };
+      const badChild = { id: 'thrower', start: [throwerMod, 'start_link', []] as any };
+      const startResult = await Supervisor.start_child(result.ok, badChild);
+      expect('error' in startResult).toBe(true);
+    });
   });
 });

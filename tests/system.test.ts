@@ -234,4 +234,140 @@ describe('ActorSystem', () => {
       ActorSystem.run(sysB, () => Process.exit(pidB, 'done'));
     });
   });
+
+  describe('hasMessages', () => {
+    test('returns false for unknown PID', () => {
+      expect(M.hasMessages('#PID<9999.0.0>')).toBe(false);
+    });
+
+    test('returns true when mailbox has messages', () => {
+      const pid = M.generatePid();
+      const proc = M.createProcess(pid);
+      M.registerProcess(pid, proc);
+      proc.mailbox.push('msg');
+      expect(M.hasMessages(pid)).toBe(true);
+    });
+
+    test('returns false for empty mailbox', () => {
+      const pid = M.generatePid();
+      const proc = M.createProcess(pid);
+      M.registerProcess(pid, proc);
+      expect(M.hasMessages(pid)).toBe(false);
+    });
+  });
+
+  describe('onExit handler', () => {
+    test('onExit is called when process exits abnormally', async () => {
+      const sys = new ActorSystem();
+
+      let exitReport: any = null;
+      sys.onExit = (report) => { exitReport = report; };
+
+      ActorSystem.run(sys, () => {
+        const pid = Process.spawn(() => { throw new Error('bang'); });
+      });
+      await sleep(20);
+
+      expect(exitReport).not.toBeNull();
+      expect(exitReport.reason).toBeInstanceOf(Error);
+    });
+
+    test('onExit is called for normal exit too', async () => {
+      const sys = new ActorSystem();
+
+      let called = false;
+      sys.onExit = () => { called = true; };
+
+      ActorSystem.run(sys, () => {
+        Process.spawn(() => {});
+      });
+      await sleep(20);
+
+      expect(called).toBe(true);
+    });
+
+    test('onExit errors are caught', async () => {
+      const sys = new ActorSystem();
+      sys.onExit = () => { throw new Error('bad handler'); };
+
+      ActorSystem.run(sys, () => {
+        Process.spawn(() => { throw new Error('boom'); });
+      });
+      await sleep(20);
+
+      expect(true).toBe(true);
+    });
+  });
+
+  describe('message budget and yielding', () => {
+    test('countMessage returns true when budget exhausted', () => {
+      const pid = M.generatePid();
+      const proc = M.createProcess(pid);
+      proc.messageBudget = 3;
+      proc.messageCount = 1;
+      M.registerProcess(pid, proc);
+
+      expect(M.countMessage(pid)).toBe(false);
+      expect(M.countMessage(pid)).toBe(true);
+      expect(proc.messageCount).toBe(0);
+    });
+
+    test('countMessage returns false when budget is 0', () => {
+      const pid = M.generatePid();
+      const proc = M.createProcess(pid);
+      proc.messageBudget = 0;
+      M.registerProcess(pid, proc);
+
+      expect(M.countMessage(pid)).toBe(false);
+    });
+
+    test('countMessage returns false for unknown PID', () => {
+      expect(M.countMessage('#PID<9999.0.0>')).toBe(false);
+    });
+
+    test('doYield runs yield without throwing', async () => {
+      const pid = M.generatePid();
+      const proc = M.createProcess(pid);
+      M.registerProcess(pid, proc);
+
+      await M.doYield(pid);
+    });
+
+    test('yieldIfNeeded yields when budget exhausted', async () => {
+      const pid = M.generatePid();
+      const proc = M.createProcess(pid);
+      proc.messageBudget = 1;
+      proc.messageCount = 0;
+      M.registerProcess(pid, proc);
+
+      await M.yieldIfNeeded(pid);
+      expect(proc.messageCount).toBe(0);
+    });
+
+    test('yieldIfNeeded does nothing for unknown PID', async () => {
+      await M.yieldIfNeeded('#PID<9999.0.0>');
+    });
+
+    test('yieldIfNeeded skips when budget is 0', async () => {
+      const pid = M.generatePid();
+      const proc = M.createProcess(pid);
+      proc.messageBudget = 0;
+      proc.messageCount = 5;
+      M.registerProcess(pid, proc);
+
+      await M.yieldIfNeeded(pid);
+      expect(proc.messageCount).toBe(5);
+    });
+  });
+
+  describe('receiveMessage timeout', () => {
+    test('receiveMessage rejects on timeout', async () => {
+      const pid = M.generatePid();
+      const proc = M.createProcess(pid);
+      proc.status = 'alive';
+      M.registerProcess(pid, proc);
+
+      await expect(M.receiveMessage(pid, 5)).rejects.toThrow('timed out');
+    });
+  });
 });

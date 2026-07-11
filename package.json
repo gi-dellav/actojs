@@ -16,7 +16,8 @@
     "./system": "./src/system.ts"
   },
   "scripts": {
-    "build:docs": "typedoc"
+    "build:docs": "typedoc",
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

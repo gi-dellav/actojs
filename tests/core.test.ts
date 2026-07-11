@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { WebRuntime, setRuntime, getRuntime } from '../src/core';
+import { WebRuntime, setRuntime, getRuntime, hasMemoryAPI } from '../src/core';
 
 describe('core', () => {
   describe('WebRuntime', () => {
@@ -22,6 +22,19 @@ describe('core', () => {
       expect(getRuntime().name).toBe('custom');
       // Restore
       setRuntime(prev);
+    });
+  });
+
+  describe('hasMemoryAPI', () => {
+    test('returns boolean', () => {
+      const result = hasMemoryAPI();
+      expect(typeof result).toBe('boolean');
+    });
+
+    test('is consistent on multiple calls', () => {
+      const a = hasMemoryAPI();
+      const b = hasMemoryAPI();
+      expect(a).toBe(b);
     });
   });
 });

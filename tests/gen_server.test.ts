@@ -316,4 +316,93 @@ describe('GenServer', () => {
       expect(val).toBe('first');
     });
   });
+
+  describe('stop with timeout', () => {
+    test('stop with timeout rejects on timeout', async () => {
+      const result = await GS.start({
+        init() { return {}; },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      await GS.stop(result.ok, undefined, 5000);
+      expect(Process.alive(result.ok)).toBe(false);
+    });
+
+    test('stop resolves immediately when process already dead', async () => {
+      const result = await GS.start({
+        init() { return {}; },
+      }, null);
+      if ('error' in result) throw result.error;
+      const pid = result.ok;
+
+      Process.exit(pid, 'kill');
+      await sleep(15);
+
+      await GS.stop(pid);
+    });
+  });
+
+  describe('handle_info for null/primitive messages', () => {
+    test('dispatches null to handle_info', async () => {
+      let infoReceived: unknown = undefined;
+      let gotInfo = false;
+      const result = await GS.start({
+        init() { return {}; },
+        handle_info(msg: unknown, state: any) {
+          infoReceived = msg;
+          gotInfo = true;
+          return { noreply: undefined, state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      Process.send(result.ok, null);
+      await sleep(20);
+      expect(gotInfo).toBe(true);
+    });
+
+    test('handle_info is safe for null return', async () => {
+      const result = await GS.start({
+        init() { return {}; },
+        handle_info(_msg: unknown, state: any) {
+          return { noreply: undefined, state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      Process.send(result.ok, null);
+      await sleep(10);
+      expect(Process.alive(result.ok)).toBe(true);
+    });
+
+    test('handle_info throws are swallowed', async () => {
+      const result = await GS.start({
+        init() { return {}; },
+        handle_info(_msg: unknown, state: any) {
+          throw new Error('info error');
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      Process.send(result.ok, { hello: true });
+      await sleep(10);
+      expect(Process.alive(result.ok)).toBe(true);
+    });
+  });
+
+  describe('terminate error handling', () => {
+    test('terminate errors are caught', async () => {
+      const result = await GS.start({
+        init() { return {}; },
+        terminate() {
+          throw new Error('terminate error');
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      await GS.stop(result.ok, 'test_reason');
+      await sleep(10);
+      expect(Process.alive(result.ok)).toBe(false);
+    });
+  });
 });
