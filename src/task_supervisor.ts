@@ -9,7 +9,7 @@
 //   const result = await Task.await_(handle);
 
 import type { PID, Ref, ChildSpec, ChildInfo, OnStart, OnStartChild, TaskHandle } from './types';
-import type { SupervisorInitOptions, SupervisorStartOptions } from './types';
+import type { SupervisorInitOptions } from './types';
 import { ActorSystem } from './system';
 import * as Proc from './process';
 import * as DynamicSupervisor from './dynamic_supervisor';
@@ -29,7 +29,7 @@ export interface TaskSupervisorOpts {
 
 /** Start a Task.Supervisor process. Returns { ok: PID } on success. */
 export async function start_link(opts: TaskSupervisorOpts = {}): Promise<OnStart> {
-  const dsOpts: SupervisorStartOptions = {
+  const dsOpts: SupervisorInitOptions = {
     strategy: 'one_for_one',
     name: opts.name,
     max_restarts: opts.max_restarts,

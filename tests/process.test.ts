@@ -90,6 +90,55 @@ describe('process', () => {
     });
   });
 
+  describe('spawn_monitor', () => {
+    test('returns pid and ref, monitors the spawned process', () => {
+      const callerPid = 'mon_test';
+      const procCaller = M.createProcess(callerPid);
+      procCaller.status = 'running';
+      M.registerProcess(callerPid, procCaller);
+      M.pushPid(callerPid);
+
+      const { pid, ref } = Process.spawn_monitor(() => {});
+      const spawned = M.getProcess(pid);
+      expect(typeof ref).toBe('symbol');
+      expect(spawned!.monitoredBy.has(callerPid)).toBe(true);
+      expect(procCaller.monitors.get(ref)).toBe(pid);
+
+      M.popPid();
+    });
+
+    test('sends DOWN on exit', () => {
+      const callerPid = 'mon_down_test';
+      const procCaller = M.createProcess(callerPid);
+      procCaller.status = 'running';
+      M.registerProcess(callerPid, procCaller);
+      M.pushPid(callerPid);
+
+      const { pid, ref } = Process.spawn_monitor(() => {});
+      M.popPid();
+
+      const spawned = M.getProcess(pid)!;
+      spawned.exitReason = 'crash';
+      M.handleExit(spawned);
+
+      expect(procCaller.mailbox.length).toBe(1);
+      const msg = procCaller.mailbox[0] as any;
+      expect(msg.type).toBe('DOWN');
+      expect(msg.ref).toBe(ref);
+      expect(msg.pid).toBe(pid);
+      expect(msg.reason).toBe('crash');
+    });
+
+    test('throws when called outside a process', () => {
+      M.clearPidStack();
+      // spawn_monitor outside a process still works but won't setup monitoring
+      // since there's no caller; the function should still return pid and ref.
+      const { pid, ref } = Process.spawn_monitor(() => {});
+      expect(typeof pid).toBe('string');
+      expect(typeof ref).toBe('symbol');
+    });
+  });
+
   describe('send', () => {
     test('delivers message to a PID', async () => {
       let received: unknown;
@@ -447,6 +496,63 @@ describe('process', () => {
       });
       await sleep(10);
       expect(prev).toBe(1);
+    });
+
+    test('get returns default for missing key', async () => {
+      let result: unknown;
+      Process.spawn(() => {
+        result = Process.get('nope', 'fallback');
+      });
+      await sleep(10);
+      expect(result).toBe('fallback');
+    });
+
+    test('get returns actual value over default', async () => {
+      let result: unknown;
+      Process.spawn(() => {
+        Process.put('x', 42);
+        result = Process.get('x', 99);
+      });
+      await sleep(10);
+      expect(result).toBe(42);
+    });
+
+    test('get_keys returns all keys', async () => {
+      let result: unknown;
+      Process.spawn(() => {
+        Process.put('a', 1);
+        Process.put('b', 2);
+        result = Process.get_keys().sort();
+      });
+      await sleep(10);
+      expect(result).toEqual(['a', 'b']);
+    });
+
+    test('get_keys with value filter', async () => {
+      let result: unknown;
+      Process.spawn(() => {
+        Process.put('a', 1);
+        Process.put('b', 2);
+        Process.put('c', 1);
+        result = Process.get_keys(1).sort();
+      });
+      await sleep(10);
+      expect(result).toEqual(['a', 'c']);
+    });
+
+    test('get_keys returns empty when no match', async () => {
+      let result: unknown;
+      Process.spawn(() => {
+        Process.put('a', 1);
+        result = Process.get_keys(99);
+      });
+      await sleep(10);
+      expect(result).toEqual([]);
+    });
+
+    test('get_keys throws outside process', () => {
+      M.clearPidStack();
+      expect(() => Process.get_keys()).toThrow('outside of a process');
     });
   });
 

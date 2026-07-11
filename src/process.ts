@@ -101,6 +101,68 @@ export function spawn_link(fn: () => void): PID {
   return spawn(fn, ['link']);
 }
 
+/** Spawn a new process and monitor it, returning the PID and the monitor reference. */
+export function spawn_monitor(fn: () => void | Promise<void>): { pid: PID; ref: Ref } {
+  const rt = getRuntime();
+  if (rt.spawnProcess) {
+    const pid = rt.spawnProcess(fn, ['monitor']);
+    if (pid != null) {
+      const caller = ActorSystem.current.getCurrentPid();
+      if (caller) {
+        const callerProc = ActorSystem.current.getProcess(caller);
+        if (callerProc) {
+          const found = Array.from(callerProc.monitors.entries()).find(([, t]) => t === pid);
+          if (found) return { pid, ref: found[0] };
+        }
+      }
+    }
+  }
+
+  const sys = ActorSystem.current;
+  const pid = sys.generatePid();
+  const proc = sys.createProcess(pid);
+  sys.registerProcess(pid, proc);
+
+  const ref: Ref = Symbol('monitor');
+  const caller = sys.getCurrentPid();
+  if (caller) {
+    const callerProc = sys.getProcess(caller);
+    if (callerProc) {
+      proc.monitoredBy.set(caller, [ref]);
+      callerProc.monitors.set(ref, pid);
+    }
+  }
+
+  queueMicrotask(() => {
+    ActorSystem.run(sys, () => {
+    const result = sys.runWithPid(pid, () => {
+      try {
+        return fn();
+      } catch (err) {
+        proc.exitReason = err;
+        return undefined;
+      }
+    });
+
+    const finish = (err?: unknown) => {
+      if (proc.status === 'running') {
+        proc.status = 'exiting';
+        proc.exitReason = proc.exitReason ?? err ?? 'normal';
+      }
+      sys.handleExit(proc);
+    };
+
+    if (result instanceof Promise) {
+      result.then(finish, finish);
+    } else {
+      finish();
+    }
+    });
+  });
+
+  return { pid, ref };
+}
+
 // ---- send -----------------------------------------------------------------
 
 /** Deliver a message to a destination, resolving registered names to PIDs. */
@@ -329,13 +391,14 @@ export function info(pid: PID): ProcessInfo | null {
 
 // ---- process dictionary ---------------------------------------------------
 
-/** Read a value from the current process's dictionary. */
-export function get(key: string): unknown {
+/** Read a value from the current process's dictionary, with an optional default. */
+export function get(key: string, defaultValue?: unknown): unknown {
   const caller = M.getCurrentPid();
   if (!caller) throw new Error('get() called outside of a process');
   const proc = M.getProcess(caller);
   if (!proc) throw new Error('process not found');
-  return proc.processDict.get(key);
+  const val = proc.processDict.get(key);
+  return val !== undefined ? val : defaultValue;
 }
 
 /** Store a value in the current process's dictionary. Returns the previous value. */
@@ -347,6 +410,22 @@ export function put(key: string, value: unknown): unknown {
   const prev = proc.processDict.get(key);
   proc.processDict.set(key, value);
   return prev;
+}
+
+/** Return all keys in the current process's dictionary, optionally matching a value. */
+export function get_keys(value?: unknown): string[] {
+  const caller = M.getCurrentPid();
+  if (!caller) throw new Error('get_keys() called outside of a process');
+  const proc = M.getProcess(caller);
+  if (!proc) throw new Error('process not found');
+  if (arguments.length === 0) {
+    return Array.from(proc.processDict.keys());
+  }
+  const keys: string[] = [];
+  proc.processDict.forEach((v, k) => {
+    if (v === value) keys.push(k);
+  });
+  return keys;
 }
 
 /** Remove a key from the current process's dictionary. Returns the previous value. */
