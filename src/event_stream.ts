@@ -1,7 +1,7 @@
 // actojs — Async-iterable wrapper over a process mailbox.
 // Lets you consume messages with `for await…of`.
 
-import * as Proc from './process';
+import * as Proc from "./process";
 
 /**
  * Returns an infinite async iterable that yields every message received

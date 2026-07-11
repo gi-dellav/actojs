@@ -1,8 +1,8 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
-import { ActorSystem } from '../src/system';
-import * as Process from '../src/process';
-import * as M from '../src/mailbox';
-import { sleep } from './helpers';
+import { describe, test, expect, beforeEach } from "bun:test";
+import { ActorSystem } from "../src/system";
+import * as Process from "../src/process";
+import * as M from "../src/mailbox";
+import { sleep } from "./helpers";
 
 beforeEach(() => {
   for (const pid of M.allPids()) {
@@ -15,36 +15,38 @@ function waitFor(fn: () => boolean, ms = 1000): Promise<void> {
     const start = Date.now();
     const check = () => {
       if (fn()) return resolve();
-      if (Date.now() - start > ms) return reject(new Error('timeout'));
+      if (Date.now() - start > ms) return reject(new Error("timeout"));
       setTimeout(check, 5);
     };
     check();
   });
 }
 
-describe('ActorSystem', () => {
-  describe('default system', () => {
-    test('ActorSystem.current returns the default system', () => {
+describe("ActorSystem", () => {
+  describe("default system", () => {
+    test("ActorSystem.current returns the default system", () => {
       const sys = ActorSystem.current;
       expect(sys).toBeInstanceOf(ActorSystem);
-      expect(sys.systemId).toBe('0');
+      expect(sys.systemId).toBe("0");
     });
 
-    test('ActorSystem.default always returns the same instance', () => {
+    test("ActorSystem.default always returns the same instance", () => {
       const a = ActorSystem.default;
       const b = ActorSystem.default;
       expect(a).toBe(b);
     });
   });
 
-  describe('process isolation', () => {
-    test('processes spawned in system A are not visible in system B', async () => {
-      const sysA = new ActorSystem('a');
-      const sysB = new ActorSystem('b');
+  describe("process isolation", () => {
+    test("processes spawned in system A are not visible in system B", async () => {
+      const sysA = new ActorSystem("a");
+      const sysB = new ActorSystem("b");
 
-      let pidA = '';
+      let pidA = "";
       ActorSystem.run(sysA, () => {
-        pidA = Process.spawn(async () => { await Process.receive(); });
+        pidA = Process.spawn(async () => {
+          await Process.receive();
+        });
       });
 
       await sleep(10);
@@ -61,18 +63,18 @@ describe('ActorSystem', () => {
 
       // Cleanup
       ActorSystem.run(sysA, () => {
-        Process.exit(pidA, 'done');
+        Process.exit(pidA, "done");
       });
     });
 
-    test('name registrations are isolated between systems', async () => {
-      const sysA = new ActorSystem('a');
-      const sysB = new ActorSystem('b');
+    test("name registrations are isolated between systems", async () => {
+      const sysA = new ActorSystem("a");
+      const sysB = new ActorSystem("b");
 
-      let pidA = '';
+      let pidA = "";
       ActorSystem.run(sysA, () => {
         pidA = Process.spawn(async () => {
-          Process.register(Process.self(), 'shared_name');
+          Process.register(Process.self(), "shared_name");
           await Process.receive(); // stay alive
         });
       });
@@ -80,29 +82,34 @@ describe('ActorSystem', () => {
       await sleep(10);
 
       ActorSystem.run(sysA, () => {
-        expect(Process.whereis('shared_name')).toBe(pidA);
+        expect(Process.whereis("shared_name")).toBe(pidA);
       });
 
       ActorSystem.run(sysB, () => {
-        expect(Process.whereis('shared_name')).toBeNull();
+        expect(Process.whereis("shared_name")).toBeNull();
       });
 
       ActorSystem.run(sysA, () => {
-        Process.exit(pidA, 'done');
+        Process.exit(pidA, "done");
       });
     });
 
-    test('exit cascades do not cross system boundaries', async () => {
-      const sysA = new ActorSystem('a');
-      const sysB = new ActorSystem('b');
+    test("exit cascades do not cross system boundaries", async () => {
+      const sysA = new ActorSystem("a");
+      const sysB = new ActorSystem("b");
 
-      let pidA1 = '', pidA2 = '';
-      let pidB = '';
+      let pidA1 = "",
+        pidA2 = "";
+      let pidB = "";
 
       // Spawn processes in sysA and link them via direct state manipulation
       ActorSystem.run(sysA, () => {
-        pidA1 = Process.spawn(async () => { await Process.receive(); });
-        pidA2 = Process.spawn(async () => { await Process.receive(); });
+        pidA1 = Process.spawn(async () => {
+          await Process.receive();
+        });
+        pidA2 = Process.spawn(async () => {
+          await Process.receive();
+        });
         // Link them together
         const p1 = sysA.getProcess(pidA1);
         const p2 = sysA.getProcess(pidA2);
@@ -113,14 +120,16 @@ describe('ActorSystem', () => {
       });
 
       ActorSystem.run(sysB, () => {
-        pidB = Process.spawn(async () => { await Process.receive(); });
+        pidB = Process.spawn(async () => {
+          await Process.receive();
+        });
       });
 
       await sleep(10);
 
       // Kill pidA2 in sysA — should cascade to pidA1 but NOT pidB
       ActorSystem.run(sysA, () => {
-        Process.exit(pidA2, 'crash');
+        Process.exit(pidA2, "crash");
       });
 
       await sleep(20);
@@ -136,29 +145,29 @@ describe('ActorSystem', () => {
       });
 
       ActorSystem.run(sysB, () => {
-        Process.exit(pidB, 'done');
+        Process.exit(pidB, "done");
       });
     });
 
-    test('ActorSystem.run restores previous system after exception', () => {
+    test("ActorSystem.run restores previous system after exception", () => {
       const prev = ActorSystem.current;
-      const sys = new ActorSystem('test');
+      const sys = new ActorSystem("test");
 
       try {
         ActorSystem.run(sys, () => {
-          throw new Error('boom');
+          throw new Error("boom");
         });
       } catch (_) {
         // expected
       }
 
       expect(ActorSystem.current).toBe(prev);
-      expect(ActorSystem.current.systemId).toBe('0');
+      expect(ActorSystem.current.systemId).toBe("0");
     });
 
-    test('ActorSystem.run restores previous system after async success', async () => {
+    test("ActorSystem.run restores previous system after async success", async () => {
       const prev = ActorSystem.current;
-      const sys = new ActorSystem('test');
+      const sys = new ActorSystem("test");
 
       await ActorSystem.run(sys, async () => {
         await sleep(5);
@@ -167,14 +176,14 @@ describe('ActorSystem', () => {
       expect(ActorSystem.current).toBe(prev);
     });
 
-    test('ActorSystem.run restores previous system after async failure', async () => {
+    test("ActorSystem.run restores previous system after async failure", async () => {
       const prev = ActorSystem.current;
-      const sys = new ActorSystem('test');
+      const sys = new ActorSystem("test");
 
       try {
         await ActorSystem.run(sys, async () => {
           await sleep(5);
-          throw new Error('async boom');
+          throw new Error("async boom");
         });
       } catch (_) {
         // expected
@@ -184,26 +193,26 @@ describe('ActorSystem', () => {
     });
   });
 
-  describe('PID generation', () => {
-    test('default system PIDs use old format', () => {
+  describe("PID generation", () => {
+    test("default system PIDs use old format", () => {
       const pid = ActorSystem.current.generatePid();
       expect(pid).toMatch(/^#PID<0\.\d+\.0>$/);
     });
 
-    test('named system PIDs include system name', () => {
-      const sys = new ActorSystem('myapp');
+    test("named system PIDs include system name", () => {
+      const sys = new ActorSystem("myapp");
       const pid = sys.generatePid();
       expect(pid).toMatch(/^#PID<myapp@0\.\d+\.0>$/);
     });
   });
 
-  describe('message delivery isolation', () => {
-    test('send delivers only within current system', async () => {
-      const sysA = new ActorSystem('a');
-      const sysB = new ActorSystem('b');
+  describe("message delivery isolation", () => {
+    test("send delivers only within current system", async () => {
+      const sysA = new ActorSystem("a");
+      const sysB = new ActorSystem("b");
 
-      let pidA = '';
-      let pidB = '';
+      let pidA = "";
+      let pidB = "";
       let receivedA: unknown;
       let receivedB: unknown;
 
@@ -223,32 +232,32 @@ describe('ActorSystem', () => {
 
       // Send within sysA
       ActorSystem.run(sysA, () => {
-        Process.send(pidA, 'hello_from_A');
+        Process.send(pidA, "hello_from_A");
       });
 
       await waitFor(() => receivedA !== undefined, 500);
-      expect(receivedA).toBe('hello_from_A');
+      expect(receivedA).toBe("hello_from_A");
       expect(receivedB).toBeUndefined();
 
-      ActorSystem.run(sysA, () => Process.exit(pidA, 'done'));
-      ActorSystem.run(sysB, () => Process.exit(pidB, 'done'));
+      ActorSystem.run(sysA, () => Process.exit(pidA, "done"));
+      ActorSystem.run(sysB, () => Process.exit(pidB, "done"));
     });
   });
 
-  describe('hasMessages', () => {
-    test('returns false for unknown PID', () => {
-      expect(M.hasMessages('#PID<9999.0.0>')).toBe(false);
+  describe("hasMessages", () => {
+    test("returns false for unknown PID", () => {
+      expect(M.hasMessages("#PID<9999.0.0>")).toBe(false);
     });
 
-    test('returns true when mailbox has messages', () => {
+    test("returns true when mailbox has messages", () => {
       const pid = M.generatePid();
       const proc = M.createProcess(pid);
       M.registerProcess(pid, proc);
-      proc.mailbox.push('msg');
+      proc.mailbox.push("msg");
       expect(M.hasMessages(pid)).toBe(true);
     });
 
-    test('returns false for empty mailbox', () => {
+    test("returns false for empty mailbox", () => {
       const pid = M.generatePid();
       const proc = M.createProcess(pid);
       M.registerProcess(pid, proc);
@@ -256,15 +265,19 @@ describe('ActorSystem', () => {
     });
   });
 
-  describe('onExit handler', () => {
-    test('onExit is called when process exits abnormally', async () => {
+  describe("onExit handler", () => {
+    test("onExit is called when process exits abnormally", async () => {
       const sys = new ActorSystem();
 
       let exitReport: any = null;
-      sys.onExit = (report) => { exitReport = report; };
+      sys.onExit = (report) => {
+        exitReport = report;
+      };
 
       ActorSystem.run(sys, () => {
-        const pid = Process.spawn(() => { throw new Error('bang'); });
+        const pid = Process.spawn(() => {
+          throw new Error("bang");
+        });
       });
       await sleep(20);
 
@@ -272,11 +285,13 @@ describe('ActorSystem', () => {
       expect(exitReport.reason).toBeInstanceOf(Error);
     });
 
-    test('onExit is called for normal exit too', async () => {
+    test("onExit is called for normal exit too", async () => {
       const sys = new ActorSystem();
 
       let called = false;
-      sys.onExit = () => { called = true; };
+      sys.onExit = () => {
+        called = true;
+      };
 
       ActorSystem.run(sys, () => {
         Process.spawn(() => {});
@@ -286,12 +301,16 @@ describe('ActorSystem', () => {
       expect(called).toBe(true);
     });
 
-    test('onExit errors are caught', async () => {
+    test("onExit errors are caught", async () => {
       const sys = new ActorSystem();
-      sys.onExit = () => { throw new Error('bad handler'); };
+      sys.onExit = () => {
+        throw new Error("bad handler");
+      };
 
       ActorSystem.run(sys, () => {
-        Process.spawn(() => { throw new Error('boom'); });
+        Process.spawn(() => {
+          throw new Error("boom");
+        });
       });
       await sleep(20);
 
@@ -299,8 +318,8 @@ describe('ActorSystem', () => {
     });
   });
 
-  describe('message budget and yielding', () => {
-    test('countMessage returns true when budget exhausted', () => {
+  describe("message budget and yielding", () => {
+    test("countMessage returns true when budget exhausted", () => {
       const pid = M.generatePid();
       const proc = M.createProcess(pid);
       proc.messageBudget = 3;
@@ -312,7 +331,7 @@ describe('ActorSystem', () => {
       expect(proc.messageCount).toBe(0);
     });
 
-    test('countMessage returns false when budget is 0', () => {
+    test("countMessage returns false when budget is 0", () => {
       const pid = M.generatePid();
       const proc = M.createProcess(pid);
       proc.messageBudget = 0;
@@ -321,11 +340,11 @@ describe('ActorSystem', () => {
       expect(M.countMessage(pid)).toBe(false);
     });
 
-    test('countMessage returns false for unknown PID', () => {
-      expect(M.countMessage('#PID<9999.0.0>')).toBe(false);
+    test("countMessage returns false for unknown PID", () => {
+      expect(M.countMessage("#PID<9999.0.0>")).toBe(false);
     });
 
-    test('doYield runs yield without throwing', async () => {
+    test("doYield runs yield without throwing", async () => {
       const pid = M.generatePid();
       const proc = M.createProcess(pid);
       M.registerProcess(pid, proc);
@@ -333,7 +352,7 @@ describe('ActorSystem', () => {
       await M.doYield(pid);
     });
 
-    test('yieldIfNeeded yields when budget exhausted', async () => {
+    test("yieldIfNeeded yields when budget exhausted", async () => {
       const pid = M.generatePid();
       const proc = M.createProcess(pid);
       proc.messageBudget = 1;
@@ -344,11 +363,11 @@ describe('ActorSystem', () => {
       expect(proc.messageCount).toBe(0);
     });
 
-    test('yieldIfNeeded does nothing for unknown PID', async () => {
-      await M.yieldIfNeeded('#PID<9999.0.0>');
+    test("yieldIfNeeded does nothing for unknown PID", async () => {
+      await M.yieldIfNeeded("#PID<9999.0.0>");
     });
 
-    test('yieldIfNeeded skips when budget is 0', async () => {
+    test("yieldIfNeeded skips when budget is 0", async () => {
       const pid = M.generatePid();
       const proc = M.createProcess(pid);
       proc.messageBudget = 0;
@@ -360,14 +379,14 @@ describe('ActorSystem', () => {
     });
   });
 
-  describe('receiveMessage timeout', () => {
-    test('receiveMessage rejects on timeout', async () => {
+  describe("receiveMessage timeout", () => {
+    test("receiveMessage rejects on timeout", async () => {
       const pid = M.generatePid();
       const proc = M.createProcess(pid);
-      proc.status = 'alive';
+      proc.status = "alive";
       M.registerProcess(pid, proc);
 
-      await expect(M.receiveMessage(pid, 5)).rejects.toThrow('timed out');
+      await expect(M.receiveMessage(pid, 5)).rejects.toThrow("timed out");
     });
   });
 });

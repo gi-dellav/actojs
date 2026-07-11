@@ -2,10 +2,10 @@
 // Web runtime: cooperative event-loop (default).
 // ponytail: pluggable runtimes for Node/Bun/Deno true parallelism.
 
-export { ActorSystem } from './system';
-import { ActorSystem as AS } from './system';
-export type { ProcessLimits, SpawnOptions } from './types';
-import type { PID, SpawnOpt, SpawnOptions } from './types';
+export { ActorSystem } from "./system";
+import { ActorSystem as AS } from "./system";
+export type { ProcessLimits, SpawnOptions } from "./types";
+import type { PID, SpawnOpt, SpawnOptions } from "./types";
 
 /**
  * Runtime abstraction for pluggable execution environments.
@@ -15,7 +15,10 @@ export interface Runtime {
   /** Human-readable name of the runtime backend (e.g. "web", "node-worker"). */
   name: string;
   /** Optionally provide an alternative spawn implementation. */
-  spawnProcess?(fn: () => void | Promise<void>, opts?: SpawnOpt[] | SpawnOptions): PID | undefined;
+  spawnProcess?(
+    fn: () => void | Promise<void>,
+    opts?: SpawnOpt[] | SpawnOptions,
+  ): PID | undefined;
 }
 
 /**
@@ -23,10 +26,10 @@ export interface Runtime {
  * Suitable for browsers and single-threaded JS environments.
  */
 export class WebRuntime implements Runtime {
-  name = 'web';
+  name = "web";
 }
 
-export { WorkerRuntime } from './worker_runtime';
+export { WorkerRuntime } from "./worker_runtime";
 
 let currentRuntime: Runtime = new WebRuntime();
 

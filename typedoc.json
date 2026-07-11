@@ -1,5 +1,10 @@
 {
-  "entryPoints": ["src/index.ts", "src/types.ts", "src/system.ts", "src/core.ts"],
+  "entryPoints": [
+    "src/index.ts",
+    "src/types.ts",
+    "src/system.ts",
+    "src/core.ts"
+  ],
   "out": "docs",
   "tsconfig": "tsconfig.doc.json",
   "plugin": [],

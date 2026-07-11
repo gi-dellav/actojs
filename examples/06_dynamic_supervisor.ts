@@ -1,8 +1,8 @@
 // example: DynamicSupervisor — dynamically added children at runtime
 // run: bun run examples/06_dynamic_supervisor.ts
 
-import * as DynamicSupervisor from '../src/dynamic_supervisor';
-import * as Process from '../src/process';
+import * as DynamicSupervisor from "../src/dynamic_supervisor";
+import * as Process from "../src/process";
 
 // Child module: a simple worker
 function makeWorker(name: string) {
@@ -20,23 +20,23 @@ function makeWorker(name: string) {
 
 // Start a dynamic supervisor (starts with zero children)
 const { ok: dynSup } = await DynamicSupervisor.start_link({
-  strategy: 'one_for_one',
+  strategy: "one_for_one",
   max_children: 10,
   max_restarts: 3,
   max_seconds: 5,
 });
 
-console.log('[main] dynamic supervisor started');
+console.log("[main] dynamic supervisor started");
 
 // Dynamically add children one at a time
 for (let i = 1; i <= 3; i++) {
   const worker = makeWorker(`worker-${i}`);
   const result = await DynamicSupervisor.start_child(dynSup, {
     id: `w${i}`,
-    start: [worker, 'start_link', []],
+    start: [worker, "start_link", []],
   });
-  if ('ok' in result) {
-    console.log(`[main] added ${'worker-' + i}: ${result.ok}`);
+  if ("ok" in result) {
+    console.log(`[main] added ${"worker-" + i}: ${result.ok}`);
   }
 }
 
@@ -59,7 +59,9 @@ console.log(`[terminate_child] ${firstChild} terminated`);
 await Process.sleep(200);
 
 const counts2 = await DynamicSupervisor.count_children(dynSup);
-console.log(`[count_children after terminate] specs=${counts2.specs} active=${counts2.active}`);
+console.log(
+  `[count_children after terminate] specs=${counts2.specs} active=${counts2.active}`,
+);
 
 await DynamicSupervisor.stop(dynSup);
-console.log('[done]');
+console.log("[done]");

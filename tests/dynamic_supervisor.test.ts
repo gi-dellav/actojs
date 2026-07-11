@@ -1,15 +1,16 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
-import * as DynamicSupervisor from '../src/dynamic_supervisor';
-import * as Process from '../src/process';
-import * as M from '../src/mailbox';
-import { sleep } from './helpers';
+import { describe, test, expect, beforeEach } from "bun:test";
+import * as DynamicSupervisor from "../src/dynamic_supervisor";
+import * as Process from "../src/process";
+import * as M from "../src/mailbox";
+import { sleep } from "./helpers";
 
 function waitFor(fn: () => boolean, ms = 2000): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const check = () => {
       if (fn()) return resolve();
-      if (Date.now() - start > ms) return reject(new Error('waitFor timed out'));
+      if (Date.now() - start > ms)
+        return reject(new Error("waitFor timed out"));
       setTimeout(check, 10);
     };
     check();
@@ -34,103 +35,121 @@ beforeEach(() => {
   }
 });
 
-describe('dynamic_supervisor', () => {
-  describe('start_link', () => {
-    test('starts with options', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      expect('ok' in result).toBe(true);
+describe("dynamic_supervisor", () => {
+  describe("start_link", () => {
+    test("starts with options", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      expect("ok" in result).toBe(true);
     });
 
-    test('starts with name', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one', name: 'dyn_sup' });
-      expect('ok' in result).toBe(true);
-      expect(Process.whereis('dyn_sup')).toBe((result as any).ok);
+    test("starts with name", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+        name: "dyn_sup",
+      });
+      expect("ok" in result).toBe(true);
+      expect(Process.whereis("dyn_sup")).toBe((result as any).ok);
     });
 
-    test('starts with module-based init', async () => {
+    test("starts with module-based init", async () => {
       const mod = {
         init() {
-          return DynamicSupervisor.init({ strategy: 'one_for_one', max_children: 5 });
+          return DynamicSupervisor.init({
+            strategy: "one_for_one",
+            max_children: 5,
+          });
         },
       };
       const result = await DynamicSupervisor.start_link(mod, null);
-      expect('ok' in result).toBe(true);
+      expect("ok" in result).toBe(true);
     });
 
-    test('returns error if module has no init', async () => {
+    test("returns error if module has no init", async () => {
       // Pass an object without 'init' — the start_link checks for 'init' in optsOrModule
       // If it's an object without 'init', it falls through to the else branch (treated as opts)
       // To trigger the error, we need an object WITH 'init' that is not a function
-      const mod = { init: 'not_a_function' } as any;
+      const mod = { init: "not_a_function" } as any;
       const result = await DynamicSupervisor.start_link(mod, null);
       // With init as a string, typeof mod.init === 'function' is false,
       // so it goes to 'module must have an init method'
-      expect('error' in result).toBe(true);
+      expect("error" in result).toBe(true);
     });
   });
 
-  describe('start_child', () => {
-    test('starts a child dynamically', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      if ('error' in result) throw result.error;
+  describe("start_child", () => {
+    test("starts a child dynamically", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
       const mod = makeWorkerMod();
       const childSpec = {
-        id: 'dyn_child',
-        start: [mod, 'start_link', []] as [any, string, any[]],
+        id: "dyn_child",
+        start: [mod, "start_link", []] as [any, string, any[]],
       };
 
       const childResult = await DynamicSupervisor.start_child(sup, childSpec);
-      expect('ok' in childResult).toBe(true);
+      expect("ok" in childResult).toBe(true);
 
       const counts = await DynamicSupervisor.count_children(sup);
       expect(counts.active).toBe(1);
       expect(counts.specs).toBe(1);
     });
 
-    test('returns error for invalid module', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      if ('error' in result) throw result.error;
+    test("returns error for invalid module", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
-      const childSpec = { id: 'bad', start: [null, 'nope', []] as any };
+      const childSpec = { id: "bad", start: [null, "nope", []] as any };
       const childResult = await DynamicSupervisor.start_child(sup, childSpec);
-      expect('error' in childResult).toBe(true);
+      expect("error" in childResult).toBe(true);
     });
 
-    test('returns error when child start throws', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      if ('error' in result) throw result.error;
+    test("returns error when child start throws", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
       const mod = {
-        start_link() { throw new Error('child crash'); },
+        start_link() {
+          throw new Error("child crash");
+        },
       };
       const childSpec = {
-        id: 'thrower',
-        start: [mod, 'start_link', []] as [any, string, any[]],
+        id: "thrower",
+        start: [mod, "start_link", []] as [any, string, any[]],
       };
 
       const childResult = await DynamicSupervisor.start_child(sup, childSpec);
-      expect('error' in childResult).toBe(true);
+      expect("error" in childResult).toBe(true);
     });
   });
 
-  describe('terminate_child', () => {
-    test('terminates a child by PID', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      if ('error' in result) throw result.error;
+  describe("terminate_child", () => {
+    test("terminates a child by PID", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
       const mod = makeWorkerMod();
       const childSpec = {
-        id: 'to_kill',
-        start: [mod, 'start_link', []] as [any, string, any[]],
+        id: "to_kill",
+        start: [mod, "start_link", []] as [any, string, any[]],
       };
 
       const childResult = await DynamicSupervisor.start_child(sup, childSpec);
-      if ('error' in childResult) throw childResult.error;
+      if ("error" in childResult) throw childResult.error;
       const childPid = childResult.ok;
 
       await DynamicSupervisor.terminate_child(sup, childPid);
@@ -141,20 +160,27 @@ describe('dynamic_supervisor', () => {
       expect(counts.active).toBe(0);
     });
 
-    test('returns error for unknown PID', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      if ('error' in result) throw result.error;
+    test("returns error for unknown PID", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
-      const termResult = await DynamicSupervisor.terminate_child(sup, '#PID<999.0.0>');
-      expect('error' in (termResult as any)).toBe(true);
+      const termResult = await DynamicSupervisor.terminate_child(
+        sup,
+        "#PID<999.0.0>",
+      );
+      expect("error" in (termResult as any)).toBe(true);
     });
   });
 
-  describe('count_children', () => {
-    test('returns counts', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      if ('error' in result) throw result.error;
+  describe("count_children", () => {
+    test("returns counts", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
       const counts = await DynamicSupervisor.count_children(sup);
@@ -163,37 +189,41 @@ describe('dynamic_supervisor', () => {
     });
   });
 
-  describe('which_children', () => {
-    test('returns info for alive children', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      if ('error' in result) throw result.error;
+  describe("which_children", () => {
+    test("returns info for alive children", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
       const mod = makeWorkerMod();
       const childSpec = {
-        id: 'd1',
-        start: [mod, 'start_link', []] as [any, string, any[]],
+        id: "d1",
+        start: [mod, "start_link", []] as [any, string, any[]],
       };
 
       await DynamicSupervisor.start_child(sup, childSpec);
 
       const children = await DynamicSupervisor.which_children(sup);
       expect(children.length).toBe(1);
-      expect(children[0]!.type).toBe('worker');
+      expect(children[0]!.type).toBe("worker");
       expect(children[0]!.pid).toMatch(/^#PID</);
     });
   });
 
-  describe('stop', () => {
-    test('stop kills all children', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      if ('error' in result) throw result.error;
+  describe("stop", () => {
+    test("stop kills all children", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
       const mod = makeWorkerMod();
       const childSpec = {
-        id: 'c1',
-        start: [mod, 'start_link', []] as [any, string, any[]],
+        id: "c1",
+        start: [mod, "start_link", []] as [any, string, any[]],
       };
 
       await DynamicSupervisor.start_child(sup, childSpec);
@@ -205,10 +235,10 @@ describe('dynamic_supervisor', () => {
     });
   });
 
-  describe('init', () => {
-    test('returns a SupervisorSpec with defaults', () => {
+  describe("init", () => {
+    test("returns a SupervisorSpec with defaults", () => {
       const spec = DynamicSupervisor.init();
-      expect(spec.strategy).toBe('one_for_one');
+      expect(spec.strategy).toBe("one_for_one");
       expect(spec.children).toEqual([]);
       expect(spec.max_restarts).toBe(3);
       expect(spec.max_seconds).toBe(5);
@@ -216,20 +246,26 @@ describe('dynamic_supervisor', () => {
       expect(spec.extra_arguments).toEqual([]);
     });
 
-    test('accepts custom options', () => {
-      const spec = DynamicSupervisor.init({ strategy: 'one_for_one', max_children: 10, max_restarts: 5 });
+    test("accepts custom options", () => {
+      const spec = DynamicSupervisor.init({
+        strategy: "one_for_one",
+        max_children: 10,
+        max_restarts: 5,
+      });
       expect(spec.max_children).toBe(10);
       expect(spec.max_restarts).toBe(5);
     });
   });
 
-  describe('cleanup on child exit', () => {
-    test('removes child from tracking on normal exit', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      if ('error' in result) throw result.error;
+  describe("cleanup on child exit", () => {
+    test("removes child from tracking on normal exit", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
-      let childPid = '';
+      let childPid = "";
       const mod = {
         start_link() {
           const pid = Process.spawn(() => {
@@ -240,8 +276,8 @@ describe('dynamic_supervisor', () => {
       };
 
       const childSpec = {
-        id: 'ephemeral',
-        start: [mod, 'start_link', []] as [any, string, any[]],
+        id: "ephemeral",
+        start: [mod, "start_link", []] as [any, string, any[]],
       };
 
       await DynamicSupervisor.start_child(sup, childSpec);
@@ -254,9 +290,11 @@ describe('dynamic_supervisor', () => {
       expect(counts.active).toBe(0);
     });
 
-    test('restarts child on abnormal exit', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_one' });
-      if ('error' in result) throw result.error;
+    test("restarts child on abnormal exit", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_one",
+      });
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
       let startCount = 0;
@@ -264,7 +302,7 @@ describe('dynamic_supervisor', () => {
         start_link() {
           startCount++;
           const pid = Process.spawn(async () => {
-            if (startCount === 1) throw new Error('crash');
+            if (startCount === 1) throw new Error("crash");
             await new Promise(() => {}); // stay alive
           });
           return { ok: pid };
@@ -272,8 +310,8 @@ describe('dynamic_supervisor', () => {
       };
 
       const childSpec = {
-        id: 'crasher',
-        start: [mod, 'start_link', []] as [any, string, any[]],
+        id: "crasher",
+        start: [mod, "start_link", []] as [any, string, any[]],
       };
 
       await DynamicSupervisor.start_child(sup, childSpec);
@@ -286,13 +324,13 @@ describe('dynamic_supervisor', () => {
       expect(counts.active).toBe(1);
     });
 
-    test('shuts down when restart rate exceeded', async () => {
+    test("shuts down when restart rate exceeded", async () => {
       const result = await DynamicSupervisor.start_link({
-        strategy: 'one_for_one',
+        strategy: "one_for_one",
         max_restarts: 1,
         max_seconds: 60,
       });
-      if ('error' in result) throw result.error;
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
       let startCount = 0;
@@ -302,7 +340,7 @@ describe('dynamic_supervisor', () => {
           const pid = Process.spawn(async () => {
             if (startCount <= 2) {
               await Process.sleep(5);
-              throw new Error('crash');
+              throw new Error("crash");
             }
             await Process.receive();
           });
@@ -310,8 +348,8 @@ describe('dynamic_supervisor', () => {
         },
       };
       const childSpec = {
-        id: 'restart_limit',
-        start: [mod, 'start_link', []] as [any, string, any[]],
+        id: "restart_limit",
+        start: [mod, "start_link", []] as [any, string, any[]],
       };
 
       await DynamicSupervisor.start_child(sup, childSpec);
@@ -323,69 +361,84 @@ describe('dynamic_supervisor', () => {
     });
   });
 
-  describe('max_children enforcement', () => {
-    test('returns error when max_children reached', async () => {
+  describe("max_children enforcement", () => {
+    test("returns error when max_children reached", async () => {
       const result = await DynamicSupervisor.start_link({
-        strategy: 'one_for_one',
+        strategy: "one_for_one",
         max_children: 1,
       });
-      if ('error' in result) throw result.error;
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
       const mod = makeWorkerMod();
-      const spec1 = { id: 'a', start: [mod, 'start_link', []] as [any, string, any[]] };
-      const spec2 = { id: 'b', start: [mod, 'start_link', []] as [any, string, any[]] };
+      const spec1 = {
+        id: "a",
+        start: [mod, "start_link", []] as [any, string, any[]],
+      };
+      const spec2 = {
+        id: "b",
+        start: [mod, "start_link", []] as [any, string, any[]],
+      };
 
       const r1 = await DynamicSupervisor.start_child(sup, spec1);
-      expect('ok' in r1).toBe(true);
+      expect("ok" in r1).toBe(true);
 
       const r2 = await DynamicSupervisor.start_child(sup, spec2);
-      expect('error' in r2).toBe(true);
+      expect("error" in r2).toBe(true);
     });
   });
 
-  describe('strategy validation', () => {
-    test('rejects non-one_for_one strategy via opts', async () => {
-      const result = await DynamicSupervisor.start_link({ strategy: 'one_for_all' });
-      expect('error' in result).toBe(true);
+  describe("strategy validation", () => {
+    test("rejects non-one_for_one strategy via opts", async () => {
+      const result = await DynamicSupervisor.start_link({
+        strategy: "one_for_all",
+      });
+      expect("error" in result).toBe(true);
     });
 
-    test('rejects non-one_for_one strategy via module init', async () => {
+    test("rejects non-one_for_one strategy via module init", async () => {
       const mod = {
         init() {
-          return { children: [], strategy: 'one_for_all' as const,
-            max_restarts: 3, max_seconds: 5 };
+          return {
+            children: [],
+            strategy: "one_for_all" as const,
+            max_restarts: 3,
+            max_seconds: 5,
+          };
         },
       };
       const result = await DynamicSupervisor.start_link(mod, null);
-      expect('error' in result).toBe(true);
+      expect("error" in result).toBe(true);
     });
   });
 
-  describe('extra_arguments', () => {
-    test('merges extra_arguments with spec args', async () => {
+  describe("extra_arguments", () => {
+    test("merges extra_arguments with spec args", async () => {
       const result = await DynamicSupervisor.start_link({
-        strategy: 'one_for_one',
-        extra_arguments: ['extra1'],
+        strategy: "one_for_one",
+        extra_arguments: ["extra1"],
       });
-      if ('error' in result) throw result.error;
+      if ("error" in result) throw result.error;
       const sup = result.ok;
 
       let receivedArgs: any[] = [];
       const mod = {
         start_link(...args: any[]) {
           receivedArgs = args;
-          const pid = Process.spawn(async () => { await Process.receive(); });
+          const pid = Process.spawn(async () => {
+            await Process.receive();
+          });
           return { ok: pid };
         },
       };
       const childSpec = {
-        id: 'with_args', start: [mod, 'start_link', ['spec_arg']] as [any, string, any[]],
+        id: "with_args",
+        start: [mod, "start_link", ["spec_arg"]] as [any, string, any[]],
       };
 
       const childResult = await DynamicSupervisor.start_child(sup, childSpec);
-      expect('ok' in childResult).toBe(true);
-      expect(receivedArgs).toEqual(['extra1', 'spec_arg']);
+      expect("ok" in childResult).toBe(true);
+      expect(receivedArgs).toEqual(["extra1", "spec_arg"]);
     });
   });
 });

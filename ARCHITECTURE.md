@@ -29,16 +29,16 @@ src/event_stream.ts       AsyncIterable wrapper over a process mailbox
 
 ## Key types (`src/types.ts`)
 
-| Type | Kind | Purpose |
-|---|---|---|
-| `PID` | `string` | Erlang-style process identifier (`#PID<0.N.0>`) |
-| `Ref` | `symbol` | Unique reference for monitors, calls, tasks, timers |
-| `From` | `{ pid, ref }` | Tracks the caller of a `genCall` for reply routing |
-| `ChildSpec` | interface | Static child specification (id, start MFA, restart policy) |
-| `Strategy` | union | `'one_for_one'` \| `'one_for_all'` \| `'rest_for_one'` |
-| `ProcessState` | interface | Internal: mailbox queue, links, monitors, status, dict |
-| `GenServerCallbacks<S>` | interface | `init`, `handle_call`, `handle_cast`, `handle_info`, `terminate` |
-| `TaskHandle<R>` | `{ pid, ref }` | Handle to await/yield a task result |
+| Type                    | Kind           | Purpose                                                          |
+| ----------------------- | -------------- | ---------------------------------------------------------------- |
+| `PID`                   | `string`       | Erlang-style process identifier (`#PID<0.N.0>`)                  |
+| `Ref`                   | `symbol`       | Unique reference for monitors, calls, tasks, timers              |
+| `From`                  | `{ pid, ref }` | Tracks the caller of a `genCall` for reply routing               |
+| `ChildSpec`             | interface      | Static child specification (id, start MFA, restart policy)       |
+| `Strategy`              | union          | `'one_for_one'` \| `'one_for_all'` \| `'rest_for_one'`           |
+| `ProcessState`          | interface      | Internal: mailbox queue, links, monitors, status, dict           |
+| `GenServerCallbacks<S>` | interface      | `init`, `handle_call`, `handle_cast`, `handle_info`, `terminate` |
+| `TaskHandle<R>`         | `{ pid, ref }` | Handle to await/yield a task result                              |
 
 ## ActorSystem — the isolated universe (`src/system.ts`)
 
@@ -46,6 +46,7 @@ src/event_stream.ts       AsyncIterable wrapper over a process mailbox
 `ActorSystem.current` singleton (replaceable with `ActorSystem.run(sys, fn)`).
 
 Each system holds:
+
 - **processes**: `Map<PID, ProcessState>` — every spawned process
 - **nameRegistry**: `Map<string, PID>` — named process lookup
 - **pidStack**: implicit PID context for `self()` (LIFO)
@@ -59,6 +60,7 @@ and exit cascades never cross system boundaries.
 ## Control flow
 
 ### Spawning a process (`src/process.ts`)
+
 1. `spawn(fn)` captures `ActorSystem.current`, generates a PID, creates a
    `ProcessState`, sets up optional link/monitor edges from the caller.
 2. The function is scheduled via `queueMicrotask`, wrapped in
@@ -68,6 +70,7 @@ and exit cascades never cross system boundaries.
    settles), `sys.handleExit(proc)` runs the exit cascade.
 
 ### Message delivery (`src/system.ts` → `src/mailbox.ts`)
+
 - `send(dest, msg)` resolves `dest` via the name registry (if a string
   matches a registered name) or treats it as a raw PID.
 - If the target process is blocked in `receive()`, the waiting promise is
@@ -76,9 +79,11 @@ and exit cascades never cross system boundaries.
 - Otherwise the message is pushed onto `proc.mailbox` for later retrieval.
 
 ### GenServer loop (`src/gen_server.ts`)
+
 The GenServer is the backbone of Agent, Registry, Supervisor, and
 DynamicSupervisor. `startGenServer(callbacks, initArg)` spawns a process
 that runs an async `while (Proc.alive(me))` loop:
+
 1. `await receiveMessage(me)` — blocks until a message arrives.
 2. Dispatches on `msg.__gen_server__` tag:
    - `'call'` → `handle_call(payload, from, state)` — must reply or defer
@@ -91,7 +96,9 @@ that runs an async `while (Proc.alive(me))` loop:
 reply (or `GS.reply(from)`) resolves it. `genCast` sends and forgets.
 
 ### Exit cascading (`src/system.ts`)
+
 When a process exits (`handleExit`):
+
 1. **Linked processes**: each linked process receives an `EXIT` message if
    `trapExit` is true; otherwise it exits with the same reason (cascading).
 2. **Monitoring processes**: each monitor receives a `DOWN` message with
@@ -99,8 +106,10 @@ When a process exits (`handleExit`):
 3. The process is deregistered from the process table and name registry.
 
 ### Supervisor restart flow (`src/supervisor.ts`)
+
 The supervisor monitors all children. On a `DOWN` message with an abnormal
 reason:
+
 1. `checkRestartRate` enforces `max_restarts` within `max_seconds` window;
    if exceeded, the supervisor itself shuts down.
 2. `applyRestartStrategy` restarts children per the strategy:
@@ -159,11 +168,11 @@ discriminant. Exit/DOWN messages carry `type: 'EXIT'` or `type: 'DOWN'`.
 
 ## Dependencies
 
-| Dependency | Role |
-|---|---|
-| `typescript ^5` (peer) | Type-checking for consumers |
-| `@types/bun ^1.3.14` (dev) | Bun type definitions |
-| Bun (runtime) | Test runner (`bun:test`), bundler, package manager |
+| Dependency                 | Role                                               |
+| -------------------------- | -------------------------------------------------- |
+| `typescript ^5` (peer)     | Type-checking for consumers                        |
+| `@types/bun ^1.3.14` (dev) | Bun type definitions                               |
+| Bun (runtime)              | Test runner (`bun:test`), bundler, package manager |
 
 No runtime npm dependencies.
 

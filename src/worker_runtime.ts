@@ -7,27 +7,34 @@
 // Use Wr.* stubs (send/receive/register/etc.) for cross-thread communication.
 // Spawn args can carry serializable data: spawn((Wr, arg1, arg2) => {...}, opts, [arg1, arg2]).
 
-import type { PID, Ref, Dest, SpawnOpt, SpawnOptions, ProcessInfo } from './types';
-import { ActorSystem, type ProcessState } from './system';
-import type { Runtime } from './core';
+import type {
+  PID,
+  Ref,
+  Dest,
+  SpawnOpt,
+  SpawnOptions,
+  ProcessInfo,
+} from "./types";
+import { ActorSystem, type ProcessState } from "./system";
+import type { Runtime } from "./core";
 
 // ---- Environment detection ------------------------------------------------
 
-let _env: 'bun' | 'deno' | 'browser' | 'unknown' | null = null;
-export function detectEnv(): 'bun' | 'deno' | 'browser' | 'unknown' {
+let _env: "bun" | "deno" | "browser" | "unknown" | null = null;
+export function detectEnv(): "bun" | "deno" | "browser" | "unknown" {
   if (_env !== null) return _env;
   try {
-    if (typeof (globalThis as any).Bun !== 'undefined') {
-      _env = 'bun';
-    } else if (typeof (globalThis as any).Deno !== 'undefined') {
-      _env = 'deno';
-    } else if (typeof Worker !== 'undefined') {
-      _env = 'browser';
+    if (typeof (globalThis as any).Bun !== "undefined") {
+      _env = "bun";
+    } else if (typeof (globalThis as any).Deno !== "undefined") {
+      _env = "deno";
+    } else if (typeof Worker !== "undefined") {
+      _env = "browser";
     } else {
-      _env = 'unknown';
+      _env = "unknown";
     }
   } catch {
-    _env = 'unknown';
+    _env = "unknown";
   }
   return _env;
 }
@@ -127,12 +134,14 @@ let _sharedBlobUrl: string | null = null;
 let _blobRefCount = 0;
 
 function buildWorkerUrl(): string | URL {
-  if (detectEnv() === 'bun' || detectEnv() === 'deno') {
+  if (detectEnv() === "bun" || detectEnv() === "deno") {
     const src = workerShellSrc();
     return new URL(`data:text/javascript;base64,${btoa(src)}`);
   }
   if (!_sharedBlobUrl) {
-    const blob = new Blob([workerShellSrc()], { type: 'application/javascript' });
+    const blob = new Blob([workerShellSrc()], {
+      type: "application/javascript",
+    });
     _sharedBlobUrl = URL.createObjectURL(blob);
   }
   _blobRefCount++;
@@ -151,8 +160,8 @@ function releaseBlobRef(): void {
 
 function createWorker(): Worker {
   const url = buildWorkerUrl();
-  if (detectEnv() === 'deno') {
-    return new Worker(url, { type: 'module' } as any);
+  if (detectEnv() === "deno") {
+    return new Worker(url, { type: "module" } as any);
   }
   return new Worker(url as string);
 }
@@ -167,11 +176,11 @@ export class WorkerRuntime implements Runtime {
 
   constructor() {
     const env = detectEnv();
-    if (env === 'bun') this.name = 'bun-worker';
-    else if (env === 'deno') this.name = 'deno-worker';
-    else if (env === 'browser') this.name = 'web-worker';
-    else this.name = 'worker';
-    this.available = env !== 'unknown' && typeof Worker !== 'undefined';
+    if (env === "bun") this.name = "bun-worker";
+    else if (env === "deno") this.name = "deno-worker";
+    else if (env === "browser") this.name = "web-worker";
+    else this.name = "worker";
+    this.available = env !== "unknown" && typeof Worker !== "undefined";
   }
 
   // ---- Message routing ----------------------------------------------------
@@ -179,59 +188,88 @@ export class WorkerRuntime implements Runtime {
   deliver(pid: PID, msg: unknown): void {
     const sys = ActorSystem.current;
     const proc = sys.getProcess(pid);
-    if (proc && (proc.status === 'exited' || proc.status === 'exiting')) return;
+    if (proc && (proc.status === "exited" || proc.status === "exiting")) return;
     const w = this.workers.get(pid);
     if (w) {
-      w.postMessage({ __wr: 'msg', msg });
+      w.postMessage({ __wr: "msg", msg });
     }
   }
 
   // ---- System calls (main-thread side) ------------------------------------
 
-  private handleSysCall(sys: ActorSystem, pid: PID, op: string, args: unknown[]): unknown {
+  private handleSysCall(
+    sys: ActorSystem,
+    pid: PID,
+    op: string,
+    args: unknown[],
+  ): unknown {
     switch (op) {
-      case 'register': {
+      case "register": {
         const name = args[0] as string;
         sys.registerName(name, pid);
         const proc = sys.getProcess(pid);
         if (proc) proc.registeredName = name;
         return;
       }
-      case 'unregister': {
+      case "unregister": {
         const name = args[0] as string;
         sys.unregisterName(name);
         const proc = sys.getProcess(pid);
         if (proc && proc.registeredName === name) proc.registeredName = null;
         return;
       }
-      case 'whereis':
+      case "whereis":
         return sys.whereisName(args[0] as string);
-      case 'alive': {
+      case "alive": {
         const p = sys.getProcess(args[0] as PID);
-        return p != null && p.status !== 'exited' && p.status !== 'exiting';
+        return p != null && p.status !== "exited" && p.status !== "exiting";
       }
-      case 'flag': {
+      case "flag": {
         const proc = sys.getProcess(pid);
         if (!proc) return false;
         const flag = args[0] as string;
         const val = args[1];
         switch (flag) {
-          case 'trap_exit': { const p = proc.trapExit; proc.trapExit = !!val; return p; }
-          case 'message_budget': { const p = proc.messageBudget; proc.messageBudget = Number(val) || 0; return p; }
-          case 'max_mailbox_size': { const p = proc.maxMailboxSize; proc.maxMailboxSize = Number(val) || 0; return p; }
-          case 'exec_timeout': { const p = proc.execTimeout; proc.execTimeout = Number(val) || 0; return p; }
-          case 'max_memory': { const p = proc.maxMemory; proc.maxMemory = Number(val) || 0; return p; }
-          default: return false;
+          case "trap_exit": {
+            const p = proc.trapExit;
+            proc.trapExit = !!val;
+            return p;
+          }
+          case "message_budget": {
+            const p = proc.messageBudget;
+            proc.messageBudget = Number(val) || 0;
+            return p;
+          }
+          case "max_mailbox_size": {
+            const p = proc.maxMailboxSize;
+            proc.maxMailboxSize = Number(val) || 0;
+            return p;
+          }
+          case "exec_timeout": {
+            const p = proc.execTimeout;
+            proc.execTimeout = Number(val) || 0;
+            return p;
+          }
+          case "max_memory": {
+            const p = proc.maxMemory;
+            proc.maxMemory = Number(val) || 0;
+            return p;
+          }
+          default:
+            return false;
         }
       }
-      case 'link': {
+      case "link": {
         const t = args[0] as PID;
         const c = sys.getProcess(pid);
         const o = sys.getProcess(t);
-        if (c && o) { c.links.add(t); o.links.add(pid); }
+        if (c && o) {
+          c.links.add(t);
+          o.links.add(pid);
+        }
         return;
       }
-      case 'unlink': {
+      case "unlink": {
         const t = args[0] as PID;
         const c = sys.getProcess(pid);
         const o = sys.getProcess(t);
@@ -239,9 +277,9 @@ export class WorkerRuntime implements Runtime {
         if (o) o.links.delete(pid);
         return;
       }
-      case 'monitor': {
+      case "monitor": {
         const target = args[0] as PID;
-        const ref: Ref = Symbol('monitor');
+        const ref: Ref = Symbol("monitor");
         const c = sys.getProcess(pid);
         const o = sys.getProcess(target);
         if (c) {
@@ -254,7 +292,7 @@ export class WorkerRuntime implements Runtime {
         }
         return ref.description;
       }
-      case 'demonitor': {
+      case "demonitor": {
         const refKey = args[0] as string;
         const c = sys.getProcess(pid);
         if (!c) return;
@@ -263,7 +301,9 @@ export class WorkerRuntime implements Runtime {
             c.monitors.delete(ref);
             const o = sys.getProcess(monitoredPid);
             if (o) {
-              const refs = (o.monitoredBy.get(pid) ?? []).filter(r => r !== ref);
+              const refs = (o.monitoredBy.get(pid) ?? []).filter(
+                (r) => r !== ref,
+              );
               if (refs.length > 0) o.monitoredBy.set(pid, refs);
               else o.monitoredBy.delete(pid);
             }
@@ -272,7 +312,7 @@ export class WorkerRuntime implements Runtime {
         });
         return;
       }
-      case 'send_after': {
+      case "send_after": {
         const dest = args[0] as string;
         const pld = args[1];
         const ms = args[2] as number;
@@ -280,20 +320,25 @@ export class WorkerRuntime implements Runtime {
         const timerRef: Ref = Symbol.for(key);
         const h = setTimeout(() => {
           sys.timers.delete(timerRef);
-          const target = dest.startsWith('#PID<') ? dest : sys.whereisName(dest);
+          const target = dest.startsWith("#PID<")
+            ? dest
+            : sys.whereisName(dest);
           if (target) this.deliver(target, pld);
         }, ms);
         sys.timers.set(timerRef, h);
         return key;
       }
-      case 'cancel_timer': {
+      case "cancel_timer": {
         const key = args[0] as string;
         const ref = Symbol.for(key);
         const h = sys.timers.get(ref);
-        if (h) { clearTimeout(h); sys.timers.delete(ref); }
+        if (h) {
+          clearTimeout(h);
+          sys.timers.delete(ref);
+        }
         return;
       }
-      case 'info': {
+      case "info": {
         const target = args[0] as PID;
         const proc = sys.getProcess(target);
         if (!proc) return null;
@@ -307,20 +352,25 @@ export class WorkerRuntime implements Runtime {
           execTimeoutCount: proc.execTimeoutCount,
           maxMemory: proc.maxMemory,
           links: Array.from(proc.links),
-          monitors: Array.from(proc.monitors.entries()).map(([ref, p]) => ({ ref, pid: p })),
-          monitoredBy: Array.from(proc.monitoredBy.entries()).map(([p, refs]) => ({ pid: p, ref: refs })),
+          monitors: Array.from(proc.monitors.entries()).map(([ref, p]) => ({
+            ref,
+            pid: p,
+          })),
+          monitoredBy: Array.from(proc.monitoredBy.entries()).map(
+            ([p, refs]) => ({ pid: p, ref: refs }),
+          ),
           trapExit: proc.trapExit,
           registeredName: proc.registeredName,
         } satisfies ProcessInfo;
       }
-      case 'list':
-        return Array.from(sys.processes.keys()).filter(p => {
+      case "list":
+        return Array.from(sys.processes.keys()).filter((p) => {
           const proc = sys.getProcess(p);
-          return proc && proc.status !== 'exited' && proc.status !== 'exiting';
+          return proc && proc.status !== "exited" && proc.status !== "exiting";
         });
-      case 'get':
+      case "get":
         return sys.getProcess(pid)?.processDict.get(args[0] as string);
-      case 'put': {
+      case "put": {
         const proc = sys.getProcess(pid);
         if (!proc) return;
         const key = args[0] as string;
@@ -328,7 +378,7 @@ export class WorkerRuntime implements Runtime {
         proc.processDict.set(key, args[1]);
         return prev;
       }
-      case 'delete': {
+      case "delete": {
         const proc = sys.getProcess(pid);
         if (!proc) return;
         const key = args[0] as string;
@@ -357,7 +407,7 @@ export class WorkerRuntime implements Runtime {
     if (ref != null) {
       const sys = ActorSystem.current;
       const proc = sys.getProcess(pid);
-      if (proc) proc.processDict.set('__monitor_ref', ref);
+      if (proc) proc.processDict.set("__monitor_ref", ref);
     }
     return pid;
   }
@@ -368,13 +418,21 @@ export class WorkerRuntime implements Runtime {
    * Implementation of Runtime.spawnProcess.
    * Called transparently by Process.spawn() when this runtime is active.
    */
-  spawnProcess(fn: () => void | Promise<void>, opts?: SpawnOpt[] | SpawnOptions): PID {
+  spawnProcess(
+    fn: () => void | Promise<void>,
+    opts?: SpawnOpt[] | SpawnOptions,
+  ): PID {
     const fnCode = fn.toString();
-    const { pid, ref } = this._spawnImpl((Wr: any, __code: any) => (0, eval)('(' + (__code as string) + ')')() as void, opts, [fnCode]);
+    const { pid, ref } = this._spawnImpl(
+      (Wr: any, __code: any) =>
+        (0, eval)("(" + (__code as string) + ")")() as void,
+      opts,
+      [fnCode],
+    );
     if (ref != null) {
       const sys = ActorSystem.current;
       const proc = sys.getProcess(pid);
-      if (proc) proc.processDict.set('__monitor_ref', ref);
+      if (proc) proc.processDict.set("__monitor_ref", ref);
     }
     return pid;
   }
@@ -394,15 +452,17 @@ export class WorkerRuntime implements Runtime {
     let link = false;
     let monitor = false;
     if (Array.isArray(opts)) {
-      link = opts.includes('link');
-      monitor = opts.includes('monitor');
-    } else if (opts && typeof opts === 'object') {
+      link = opts.includes("link");
+      monitor = opts.includes("monitor");
+    } else if (opts && typeof opts === "object") {
       link = opts.link ?? false;
       monitor = opts.monitor ?? false;
       const limits = opts.limits;
       if (limits) {
-        if (limits.messageBudget != null) proc.messageBudget = limits.messageBudget;
-        if (limits.maxMailboxSize != null) proc.maxMailboxSize = limits.maxMailboxSize;
+        if (limits.messageBudget != null)
+          proc.messageBudget = limits.messageBudget;
+        if (limits.maxMailboxSize != null)
+          proc.maxMailboxSize = limits.maxMailboxSize;
         if (limits.execTimeout != null) proc.execTimeout = limits.execTimeout;
         if (limits.maxMemory != null) proc.maxMemory = limits.maxMemory;
       }
@@ -418,7 +478,7 @@ export class WorkerRuntime implements Runtime {
     }
     let monitorRef: Ref | undefined;
     if (monitor && caller) {
-      monitorRef = Symbol('monitor');
+      monitorRef = Symbol("monitor");
       const callerProc = sys.getProcess(caller);
       if (callerProc) {
         proc.monitoredBy.set(caller, [monitorRef]);
@@ -432,9 +492,9 @@ export class WorkerRuntime implements Runtime {
     const fnStr = fn.toString();
 
     const finish = (reason: unknown) => {
-      if (proc.status === 'running') {
-        proc.status = 'exiting';
-        proc.exitReason = proc.exitReason ?? reason ?? 'normal';
+      if (proc.status === "running") {
+        proc.status = "exiting";
+        proc.exitReason = proc.exitReason ?? reason ?? "normal";
       }
       sys.handleExit(proc);
       worker.terminate();
@@ -444,12 +504,12 @@ export class WorkerRuntime implements Runtime {
 
     worker.onmessage = (e: MessageEvent) => {
       const d = e.data;
-      if (!d || typeof d.__wr !== 'string') return;
+      if (!d || typeof d.__wr !== "string") return;
       switch (d.__wr) {
-        case 'ready':
-          worker.postMessage({ __wr: 'run', code: fnStr, args });
+        case "ready":
+          worker.postMessage({ __wr: "run", code: fnStr, args });
           break;
-        case 'send':
+        case "send":
           {
             let w = this.workers.get(d.target);
             if (!w) {
@@ -457,24 +517,40 @@ export class WorkerRuntime implements Runtime {
               if (resolved) w = this.workers.get(resolved);
             }
             if (w) {
-              w.postMessage({ __wr: 'msg', msg: d.msg });
+              w.postMessage({ __wr: "msg", msg: d.msg });
             } else {
               sys.deliverMessage(d.target, d.msg);
             }
           }
           break;
-        case 'exit':
+        case "exit":
           finish(d.reason);
           break;
-        case 'sys_call': {
+        case "sys_call": {
           try {
             const result = this.handleSysCall(sys, pid, d.op, d.args);
             Promise.resolve(result).then(
-              (val) => worker.postMessage({ __wr: 'sys_reply', callId: d.callId, result: val }),
-              (err) => worker.postMessage({ __wr: 'sys_reply', callId: d.callId, result: String(err), error: true }),
+              (val) =>
+                worker.postMessage({
+                  __wr: "sys_reply",
+                  callId: d.callId,
+                  result: val,
+                }),
+              (err) =>
+                worker.postMessage({
+                  __wr: "sys_reply",
+                  callId: d.callId,
+                  result: String(err),
+                  error: true,
+                }),
             );
           } catch (err) {
-            worker.postMessage({ __wr: 'sys_reply', callId: d.callId, result: String(err), error: true });
+            worker.postMessage({
+              __wr: "sys_reply",
+              callId: d.callId,
+              result: String(err),
+              error: true,
+            });
           }
           break;
         }
@@ -482,18 +558,18 @@ export class WorkerRuntime implements Runtime {
     };
 
     worker.onerror = (evt: ErrorEvent) => {
-      proc.status = 'exiting';
-      proc.exitReason = evt.error ?? evt.message ?? 'worker error';
+      proc.status = "exiting";
+      proc.exitReason = evt.error ?? evt.message ?? "worker error";
       finish(proc.exitReason);
     };
 
     worker.onmessageerror = () => {
-      proc.status = 'exiting';
-      proc.exitReason = proc.exitReason ?? 'message deserialization error';
+      proc.status = "exiting";
+      proc.exitReason = proc.exitReason ?? "message deserialization error";
       finish(proc.exitReason);
     };
 
-    worker.postMessage({ __wr: 'init', pid });
+    worker.postMessage({ __wr: "init", pid });
     return { pid, ref: monitorRef };
   }
 
@@ -504,14 +580,14 @@ export class WorkerRuntime implements Runtime {
     const entries = Array.from(this.workers);
     for (const [pid] of entries) {
       const proc = sys.getProcess(pid);
-      if (proc && proc.status === 'running') {
-        proc.status = 'exiting';
-        proc.exitReason = 'shutdown';
+      if (proc && proc.status === "running") {
+        proc.status = "exiting";
+        proc.exitReason = "shutdown";
       }
     }
     for (const [pid, worker] of entries) {
       const proc = sys.getProcess(pid);
-      if (proc && proc.status === 'exiting') {
+      if (proc && proc.status === "exiting") {
         sys.handleExit(proc);
       }
       worker.terminate();

@@ -1,16 +1,17 @@
 // example: HTTP server + client with Bun.serve and fetch, coordinated via actors
 // run: bun run examples/09_http.ts
 
-import * as Process from '../src/process';
-import * as Agent from '../src/agent';
+import * as Process from "../src/process";
+import * as Agent from "../src/agent";
 
 const PORT = 3030;
 
 // Agent that stores request logs. This will be updated by the server actor
 // whenever a request arrives, and queried by the client after fetching.
-const { ok: logAgent } = await Agent.start_link<{ requests: number; body: string[] }>(
-  () => ({ requests: 0, body: [] }),
-);
+const { ok: logAgent } = await Agent.start_link<{
+  requests: number;
+  body: string[];
+}>(() => ({ requests: 0, body: [] }));
 
 // Server actor: starts Bun.serve, forwards incoming requests to the log agent,
 // and keeps running until it receives a 'stop' message.
@@ -28,7 +29,7 @@ const serverPid = Process.spawn(async () => {
 
       return new Response(JSON.stringify({ ok: true, echo: body }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
       });
     },
   });
@@ -37,7 +38,7 @@ const serverPid = Process.spawn(async () => {
 
   await Process.receive(10_000);
   server.stop(true);
-  console.log('[server] stopped');
+  console.log("[server] stopped");
 });
 
 await Process.sleep(100);
@@ -48,9 +49,9 @@ const clientPid = Process.spawn(async () => {
 
   // POST JSON
   const res1 = await fetch(`${url}/api/hello`, {
-    method: 'POST',
-    body: JSON.stringify({ message: 'Hello from fetch' }),
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    body: JSON.stringify({ message: "Hello from fetch" }),
+    headers: { "Content-Type": "application/json" },
   });
   const data1 = await res1.json();
   console.log(`[client] POST /api/hello → ${JSON.stringify(data1)}`);
@@ -62,23 +63,23 @@ const clientPid = Process.spawn(async () => {
 
   // PUT plain text
   const res3 = await fetch(`${url}/api/items`, {
-    method: 'PUT',
-    body: 'plain text body',
+    method: "PUT",
+    body: "plain text body",
   });
   const data3 = await res3.json();
   console.log(`[client] PUT /api/items → ${JSON.stringify(data3)}`);
 
   await Process.sleep(100);
 
-  const logState = await Agent.get(logAgent, s => s);
+  const logState = await Agent.get(logAgent, (s) => s);
   console.log(`[client] server handled ${logState.requests} requests`);
   console.log(`[client] bodies received: ${JSON.stringify(logState.body)}`);
 });
 
 // Wait for client to finish, then stop the server
 await Process.sleep(2000);
-Process.send(serverPid, 'stop');
+Process.send(serverPid, "stop");
 await Process.sleep(500);
 
 await Agent.stop(logAgent);
-console.log('[done]');
+console.log("[done]");

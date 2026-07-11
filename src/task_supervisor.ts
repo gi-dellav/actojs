@@ -8,11 +8,19 @@
 //   const handle = await TaskSupervisor.async(sup, async () => 42);
 //   const result = await Task.await_(handle);
 
-import type { PID, Ref, ChildSpec, ChildInfo, OnStart, OnStartChild, TaskHandle } from './types';
-import type { SupervisorInitOptions } from './types';
-import { ActorSystem } from './system';
-import * as Proc from './process';
-import * as DynamicSupervisor from './dynamic_supervisor';
+import type {
+  PID,
+  Ref,
+  ChildSpec,
+  ChildInfo,
+  OnStart,
+  OnStartChild,
+  TaskHandle,
+} from "./types";
+import type { SupervisorInitOptions } from "./types";
+import { ActorSystem } from "./system";
+import * as Proc from "./process";
+import * as DynamicSupervisor from "./dynamic_supervisor";
 
 // ---------------------------------------------------------------------------
 
@@ -28,9 +36,11 @@ export interface TaskSupervisorOpts {
 // ---------------------------------------------------------------------------
 
 /** Start a Task.Supervisor process. Returns { ok: PID } on success. */
-export async function start_link(opts: TaskSupervisorOpts = {}): Promise<OnStart> {
+export async function start_link(
+  opts: TaskSupervisorOpts = {},
+): Promise<OnStart> {
   const dsOpts: SupervisorInitOptions = {
-    strategy: 'one_for_one',
+    strategy: "one_for_one",
     name: opts.name,
     max_restarts: opts.max_restarts,
     max_seconds: opts.max_seconds,
@@ -78,7 +88,9 @@ export async function start_child(
   fn: () => void | Promise<void>,
   opts?: { timeout?: number },
 ): Promise<OnStartChild> {
-  const wrappedFn = async () => { await fn(); };
+  const wrappedFn = async () => {
+    await fn();
+  };
   return _spawnChild(sup, wrappedFn, opts?.timeout);
 }
 
@@ -102,12 +114,24 @@ export async function terminate_child(
 }
 
 /** Gracefully shut down the supervisor and all its children. */
-export async function stop(sup: PID, reason?: unknown, timeout?: number): Promise<void> {
+export async function stop(
+  sup: PID,
+  reason?: unknown,
+  timeout?: number,
+): Promise<void> {
   await DynamicSupervisor.stop(sup, reason, timeout);
 }
 
 /** Return counts of active children. */
-export async function count_children(sup: PID, timeout?: number): Promise<{ specs: number; active: number; supervisors: number; workers: number }> {
+export async function count_children(
+  sup: PID,
+  timeout?: number,
+): Promise<{
+  specs: number;
+  active: number;
+  supervisors: number;
+  workers: number;
+}> {
   return DynamicSupervisor.count_children(sup, timeout);
 }
 
@@ -125,8 +149,8 @@ async function _startTask<R>(
   opts: { link: boolean; timeout?: number },
 ): Promise<TaskHandle<R>> {
   const sys = ActorSystem.current;
-  const ref: Ref = Symbol('task');
-  sys.taskResults.set(ref, { status: 'pending' });
+  const ref: Ref = Symbol("task");
+  sys.taskResults.set(ref, { status: "pending" });
 
   // Capture caller PID before any await — the PID stack may change across
   // the async boundary because other processes can run in between.
@@ -138,10 +162,16 @@ async function _startTask<R>(
         try {
           const value = await taskFn();
           const entry = sys.taskResults.get(taskRef);
-          if (entry) { entry.status = 'done'; entry.value = value; }
+          if (entry) {
+            entry.status = "done";
+            entry.value = value;
+          }
         } catch (err) {
           const entry = sys.taskResults.get(taskRef);
-          if (entry) { entry.status = 'error'; entry.error = err; }
+          if (entry) {
+            entry.status = "error";
+            entry.error = err;
+          }
         }
       });
       return { ok: pid };
@@ -150,13 +180,13 @@ async function _startTask<R>(
 
   const spec: ChildSpec = {
     id: _uniqueId(),
-    start: [workerModule, 'start', [fn, ref]],
-    restart: 'temporary',
-    type: 'worker',
+    start: [workerModule, "start", [fn, ref]],
+    restart: "temporary",
+    type: "worker",
   };
 
   const result = await DynamicSupervisor.start_child(sup, spec, opts.timeout);
-  if ('error' in result) {
+  if ("error" in result) {
     sys.taskResults.delete(ref);
     throw result.error;
   }
@@ -169,7 +199,11 @@ async function _startTask<R>(
 }
 
 function _trySelf(): PID | null {
-  try { return Proc.self(); } catch { return null; }
+  try {
+    return Proc.self();
+  } catch {
+    return null;
+  }
 }
 
 async function _spawnChild(
@@ -179,16 +213,18 @@ async function _spawnChild(
 ): Promise<OnStartChild> {
   const workerModule = {
     async start(taskFn: () => Promise<void>) {
-      const pid = Proc.spawn(async () => { await taskFn(); });
+      const pid = Proc.spawn(async () => {
+        await taskFn();
+      });
       return { ok: pid };
     },
   };
 
   const spec: ChildSpec = {
     id: _uniqueId(),
-    start: [workerModule, 'start', [fn]],
-    restart: 'temporary',
-    type: 'worker',
+    start: [workerModule, "start", [fn]],
+    restart: "temporary",
+    type: "worker",
   };
 
   return DynamicSupervisor.start_child(sup, spec, timeout);

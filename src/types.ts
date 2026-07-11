@@ -7,7 +7,7 @@ export type PID = string;
 export type Ref = symbol;
 /** Destination for sending messages — either a raw PID or a registered name. */
 export type Dest = PID | string;
-export type SpawnOpt = 'link' | 'monitor';
+export type SpawnOpt = "link" | "monitor";
 
 /**
  * Per-process resource limits for fault isolation.
@@ -50,14 +50,14 @@ export type Module = Record<string, unknown>;
 export type MFA = [Module, string, unknown[]]; // [module, functionName, args]
 
 export interface DownMessage {
-  type: 'DOWN';
+  type: "DOWN";
   ref: Ref;
   pid: PID;
   reason: unknown;
 }
 
 export interface ProcessInfo {
-  status: 'running' | 'alive' | 'exiting' | 'exited';
+  status: "running" | "alive" | "exiting" | "exited";
   messageQueueLength: number;
   maxMailboxSize: number;
   messageBudget: number;
@@ -81,21 +81,21 @@ export type OnStartChild = { ok: PID } | { error: Error };
  * - `one_for_all` — all children are restarted when any fails.
  * - `rest_for_one` — the failed child and all children started after it are restarted.
  */
-export type Strategy = 'one_for_one' | 'one_for_all' | 'rest_for_one';
+export type Strategy = "one_for_one" | "one_for_all" | "rest_for_one";
 
 export interface ChildSpec {
   id: string;
   start: MFA; // [module, functionName, args]
-  restart?: 'permanent' | 'transient' | 'temporary';
-  shutdown?: number | 'brutal_kill' | 'infinity';
-  type?: 'worker' | 'supervisor';
+  restart?: "permanent" | "transient" | "temporary";
+  shutdown?: number | "brutal_kill" | "infinity";
+  type?: "worker" | "supervisor";
   significant?: boolean;
 }
 
 export interface ChildInfo {
   id: string | undefined;
   pid: PID;
-  type: 'worker' | 'supervisor';
+  type: "worker" | "supervisor";
   modules: Module[];
 }
 
@@ -111,7 +111,8 @@ export interface TaskHandle<R> {
   ref: Ref;
 }
 
-export type RegistryKeyMode = 'unique' | 'duplicate' | { duplicate: 'key' } | { duplicate: 'pid' };
+export type RegistryKeyMode =
+  "unique" | "duplicate" | { duplicate: "key" } | { duplicate: "pid" };
 
 export interface RegistryStartOptions {
   keys: RegistryKeyMode;
@@ -143,7 +144,7 @@ export interface SupervisorSpec {
 }
 
 export interface NodeStartOpts {
-  name_domain?: 'shortnames' | 'longnames';
+  name_domain?: "shortnames" | "longnames";
 }
 
 /**
@@ -154,4 +155,4 @@ export interface NodeStartOpts {
  * - `this` — used as a filter value to refer to the local node.
  * - `known` — a previously connected node.
  */
-export type NodeState = 'visible' | 'hidden' | 'connected' | 'this' | 'known';
+export type NodeState = "visible" | "hidden" | "connected" | "this" | "known";

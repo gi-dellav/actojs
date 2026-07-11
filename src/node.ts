@@ -2,13 +2,13 @@
 // Web runtime: limited to same-origin BroadcastChannel communication.
 // ponytail: full network-backed distribution via WebSocket when needed.
 
-import type { PID, NodeStartOpts, NodeState, Ref, Module } from './types';
-import * as Proc from './process';
+import type { PID, NodeStartOpts, NodeState, Ref, Module } from "./types";
+import * as Proc from "./process";
 
 let nodeName: string | null = null;
 const connectedNodes = new Set<string>();
 const nodeMonitors = new Map<string, { ref: Ref; pid: PID | null }[]>();
-const channelNamePrefix = '__actojs_node__';
+const channelNamePrefix = "__actojs_node__";
 
 let broadcastChannel: BroadcastChannel | null = null;
 
@@ -20,14 +20,14 @@ interface WireMessage {
 }
 
 interface SpawnPayloadFn {
-  type: 'fn';
+  type: "fn";
   source: string;
   linkId?: string;
   refId?: string;
 }
 
 interface SpawnPayloadMFA {
-  type: 'mfa';
+  type: "mfa";
   module: Module;
   fn: string;
   args: unknown[];
@@ -60,9 +60,12 @@ function generateLinkId(): string {
 // ---- start / stop ---------------------------------------------------------
 
 /** Start a named node for distributed communication via BroadcastChannel. */
-export function start(name: string, opts?: NodeStartOpts): { ok: PID } | { error: Error } {
+export function start(
+  name: string,
+  opts?: NodeStartOpts,
+): { ok: PID } | { error: Error } {
   if (nodeName) {
-    return { error: new Error('node already started') };
+    return { error: new Error("node already started") };
   }
   nodeName = name;
 
@@ -81,7 +84,7 @@ export function start(name: string, opts?: NodeStartOpts): { ok: PID } | { error
 /** Stop the node, closing all connections and sending disconnect notifications. */
 export function stop(): void | { error: Error } {
   if (!nodeName) {
-    return { error: new Error('node not started') };
+    return { error: new Error("node not started") };
   }
   if (broadcastChannel) {
     broadcastChannel.close();
@@ -91,25 +94,25 @@ export function stop(): void | { error: Error } {
   if (entries) {
     for (const { ref, pid } of entries) {
       if (pid) {
-        Proc.send(pid, { type: 'node_disconnected', ref, node: nodeName });
+        Proc.send(pid, { type: "node_disconnected", ref, node: nodeName });
       }
     }
     nodeMonitors.delete(nodeName);
   }
   crossNodeLinks.forEach((link) => {
     Proc.send(link.localPid, {
-      type: 'EXIT',
+      type: "EXIT",
       from: nodeName,
-      reason: 'nodedown',
+      reason: "nodedown",
     });
   });
   crossNodeLinks.clear();
   crossNodeMonitors.forEach((mon) => {
     Proc.send(mon.localPid, {
-      type: 'DOWN',
+      type: "DOWN",
       ref: mon.localRef,
       pid: nodeName,
-      reason: 'nodedown',
+      reason: "nodedown",
     });
   });
   crossNodeMonitors.clear();
@@ -122,7 +125,7 @@ export function stop(): void | { error: Error } {
 
 /** Return the name of the current node. Throws if no node has been started. */
 export function self(): string {
-  if (!nodeName) throw new Error('node not started');
+  if (!nodeName) throw new Error("node not started");
   return nodeName;
 }
 
@@ -134,16 +137,16 @@ export function alive(): boolean {
 // ---- connect / disconnect -------------------------------------------------
 
 /** Connect to a remote node by name, sending a handshake via BroadcastChannel. */
-export function connect(node: string): boolean | 'ignored' {
+export function connect(node: string): boolean | "ignored" {
   if (!nodeName) return false;
-  if (connectedNodes.has(node)) return 'ignored';
+  if (connectedNodes.has(node)) return "ignored";
   connectedNodes.add(node);
 
   if (broadcastChannel) {
     broadcastChannel.postMessage({
       from: nodeName,
       to: node,
-      type: 'connect',
+      type: "connect",
       payload: null,
     });
   }
@@ -158,17 +161,17 @@ export function disconnect(node: string): void {
 // ---- ping -----------------------------------------------------------------
 
 /** Ping a connected node. Returns 'pong' if known, 'pang' otherwise. */
-export function ping(node: string): 'pong' | 'pang' {
-  if (!connectedNodes.has(node)) return 'pang';
+export function ping(node: string): "pong" | "pang" {
+  if (!connectedNodes.has(node)) return "pang";
   if (broadcastChannel) {
     broadcastChannel.postMessage({
       from: nodeName!,
       to: node,
-      type: 'ping',
+      type: "ping",
       payload: null,
     });
   }
-  return 'pong';
+  return "pong";
 }
 
 // ---- list -----------------------------------------------------------------
@@ -176,13 +179,17 @@ export function ping(node: string): 'pong' | 'pang' {
 /** List nodes matching the given visibility states. Defaults to visible and connected. */
 export function list(state?: string | string[]): string[] {
   if (!nodeName) return [];
-  const states = state ? (Array.isArray(state) ? state : [state]) : ['visible', 'connected'];
+  const states = state
+    ? Array.isArray(state)
+      ? state
+      : [state]
+    : ["visible", "connected"];
   const result: string[] = [];
-  if (states.includes('this') || states.includes('visible')) {
+  if (states.includes("this") || states.includes("visible")) {
     result.push(nodeName);
   }
-  if (states.includes('connected')) {
-    connectedNodes.forEach(n => result.push(n));
+  if (states.includes("connected")) {
+    connectedNodes.forEach((n) => result.push(n));
   }
   return result;
 }
@@ -192,7 +199,7 @@ export function list(state?: string | string[]): string[] {
 /** Start or stop monitoring a node. Pass flag=true to monitor (returns ref), false to stop. */
 export function monitor(node: string, flag: boolean): Ref | void {
   if (flag) {
-    const ref: Ref = Symbol('node_monitor');
+    const ref: Ref = Symbol("node_monitor");
     let pid: PID | null = null;
     try {
       pid = Proc.self();
@@ -208,7 +215,7 @@ export function monitor(node: string, flag: boolean): Ref | void {
     } catch (_) {}
     const entries = nodeMonitors.get(node);
     if (entries) {
-      const idx = entries.findIndex(e => e.pid === pid);
+      const idx = entries.findIndex((e) => e.pid === pid);
       if (idx !== -1) {
         entries.splice(idx, 1);
         if (entries.length === 0) nodeMonitors.delete(node);
@@ -220,7 +227,7 @@ export function monitor(node: string, flag: boolean): Ref | void {
 /** Stop monitoring a node identified by the given monitor reference. */
 export function demonitor_node(ref: Ref): void {
   nodeMonitors.forEach((entries, node) => {
-    const idx = entries.findIndex(e => e.ref === ref);
+    const idx = entries.findIndex((e) => e.ref === ref);
     if (idx !== -1) {
       entries.splice(idx, 1);
       if (entries.length === 0) nodeMonitors.delete(node);
@@ -239,19 +246,19 @@ export function spawn(
   args?: unknown[],
 ): PID {
   if (!broadcastChannel) {
-    throw new Error('BroadcastChannel not available');
+    throw new Error("BroadcastChannel not available");
   }
 
   let spawnPayload: SpawnPayload;
 
-  if (typeof fnOrModule === 'function') {
+  if (typeof fnOrModule === "function") {
     spawnPayload = {
-      type: 'fn',
+      type: "fn",
       source: fnOrModule.toString(),
     };
   } else {
     spawnPayload = {
-      type: 'mfa',
+      type: "mfa",
       module: fnOrModule,
       fn: fnName!,
       args: args ?? [],
@@ -262,7 +269,7 @@ export function spawn(
     broadcastChannel!.postMessage({
       from: nodeName!,
       to: node,
-      type: 'spawn',
+      type: "spawn",
       payload: spawnPayload,
     });
   });
@@ -278,7 +285,7 @@ export function spawn_link(
   args?: unknown[],
 ): PID {
   if (!broadcastChannel) {
-    throw new Error('BroadcastChannel not available');
+    throw new Error("BroadcastChannel not available");
   }
 
   const linkId = generateLinkId();
@@ -289,15 +296,15 @@ export function spawn_link(
 
   let spawnPayload: SpawnPayload;
 
-  if (typeof fnOrModule === 'function') {
+  if (typeof fnOrModule === "function") {
     spawnPayload = {
-      type: 'fn',
+      type: "fn",
       source: fnOrModule.toString(),
       linkId,
     };
   } else {
     spawnPayload = {
-      type: 'mfa',
+      type: "mfa",
       module: fnOrModule,
       fn: fnName!,
       args: args ?? [],
@@ -309,7 +316,7 @@ export function spawn_link(
     broadcastChannel!.postMessage({
       from: nodeName!,
       to: node,
-      type: 'spawn',
+      type: "spawn",
       payload: spawnPayload,
     });
   });
@@ -320,15 +327,20 @@ export function spawn_link(
     Proc.spawn(async () => {
       const monRef = Proc.monitor(callerPid!);
       const msg = await Proc.receive(30000);
-      if (msg && (msg as { type: string; ref: Ref }).type === 'DOWN') {
-        const downMsg = msg as { type: 'DOWN'; ref: Ref; pid: PID; reason: unknown };
+      if (msg && (msg as { type: string; ref: Ref }).type === "DOWN") {
+        const downMsg = msg as {
+          type: "DOWN";
+          ref: Ref;
+          pid: PID;
+          reason: unknown;
+        };
         if (downMsg.ref === monRef) {
           crossNodeLinks.delete(linkId);
           if (broadcastChannel) {
             broadcastChannel.postMessage({
               from: nodeName,
               to: node,
-              type: 'spawn_kill',
+              type: "spawn_kill",
               payload: { linkId, reason: downMsg.reason },
             });
           }
@@ -348,11 +360,11 @@ export function spawn_monitor(
   args?: unknown[],
 ): { pid: PID; ref: Ref } {
   if (!broadcastChannel) {
-    throw new Error('BroadcastChannel not available');
+    throw new Error("BroadcastChannel not available");
   }
 
   const refId = generateLinkId();
-  const localRef: Ref = Symbol('monitor');
+  const localRef: Ref = Symbol("monitor");
   let callerPid: PID | null = null;
   try {
     callerPid = Proc.self();
@@ -360,15 +372,15 @@ export function spawn_monitor(
 
   let spawnPayload: SpawnPayload;
 
-  if (typeof fnOrModule === 'function') {
+  if (typeof fnOrModule === "function") {
     spawnPayload = {
-      type: 'fn',
+      type: "fn",
       source: fnOrModule.toString(),
       refId,
     };
   } else {
     spawnPayload = {
-      type: 'mfa',
+      type: "mfa",
       module: fnOrModule,
       fn: fnName!,
       args: args ?? [],
@@ -380,7 +392,7 @@ export function spawn_monitor(
     broadcastChannel!.postMessage({
       from: nodeName!,
       to: node,
-      type: 'spawn',
+      type: "spawn",
       payload: spawnPayload,
     });
   });
@@ -402,40 +414,40 @@ function handleIncoming(msg: WireMessage): void {
   if (msg.to && msg.to !== nodeName) return;
 
   switch (msg.type) {
-    case 'connect': {
+    case "connect": {
       if (msg.from && msg.from !== nodeName) {
         connectedNodes.add(msg.from);
       }
       break;
     }
-    case 'ping': {
+    case "ping": {
       if (broadcastChannel && msg.from) {
         broadcastChannel.postMessage({
           from: nodeName,
           to: msg.from,
-          type: 'pong',
+          type: "pong",
           payload: null,
         });
       }
       break;
     }
-    case 'pong': {
+    case "pong": {
       break;
     }
-    case 'spawn': {
+    case "spawn": {
       const payload = msg.payload as SpawnPayload;
       const originNode = msg.from;
       let spawnedPid: PID | null = null;
 
-      if (payload.type === 'fn') {
+      if (payload.type === "fn") {
         try {
           const fn = new Function(`return (${payload.source})`)();
           spawnedPid = Proc.spawn(fn);
         } catch (_) {}
-      } else if (payload.type === 'mfa') {
+      } else if (payload.type === "mfa") {
         const { module, fn: fnName, args } = payload;
         try {
-          if (typeof module[fnName] === 'function') {
+          if (typeof module[fnName] === "function") {
             spawnedPid = Proc.spawn(() => {
               (module[fnName] as Function)(...args);
             });
@@ -453,7 +465,7 @@ function handleIncoming(msg: WireMessage): void {
             const downMsg = await Proc.receive(30000);
             if (
               downMsg &&
-              (downMsg as { type: string }).type === 'DOWN' &&
+              (downMsg as { type: string }).type === "DOWN" &&
               (downMsg as { ref: Ref }).ref === monRef
             ) {
               remoteSpawnRegistry.delete(capturedLinkId);
@@ -461,7 +473,7 @@ function handleIncoming(msg: WireMessage): void {
                 broadcastChannel.postMessage({
                   from: nodeName,
                   to: originNode,
-                  type: 'spawn_exit',
+                  type: "spawn_exit",
                   payload: {
                     linkId: capturedLinkId,
                     remotePid: capturedPid,
@@ -482,7 +494,7 @@ function handleIncoming(msg: WireMessage): void {
             const downMsg = await Proc.receive(30000);
             if (
               downMsg &&
-              (downMsg as { type: string }).type === 'DOWN' &&
+              (downMsg as { type: string }).type === "DOWN" &&
               (downMsg as { ref: Ref }).ref === monRef
             ) {
               remoteSpawnRegistry.delete(capturedRefId);
@@ -490,7 +502,7 @@ function handleIncoming(msg: WireMessage): void {
                 broadcastChannel.postMessage({
                   from: nodeName,
                   to: originNode,
-                  type: 'spawn_down',
+                  type: "spawn_down",
                   payload: {
                     refId: capturedRefId,
                     remotePid: capturedPid,
@@ -504,7 +516,7 @@ function handleIncoming(msg: WireMessage): void {
       }
       break;
     }
-    case 'spawn_exit': {
+    case "spawn_exit": {
       const { linkId, remotePid, reason } = msg.payload as {
         linkId: string;
         remotePid: string;
@@ -513,7 +525,7 @@ function handleIncoming(msg: WireMessage): void {
       const link = crossNodeLinks.get(linkId);
       if (link) {
         Proc.send(link.localPid, {
-          type: 'EXIT',
+          type: "EXIT",
           from: remotePid,
           reason,
         });
@@ -521,7 +533,7 @@ function handleIncoming(msg: WireMessage): void {
       }
       break;
     }
-    case 'spawn_down': {
+    case "spawn_down": {
       const { refId, remotePid, reason } = msg.payload as {
         refId: string;
         remotePid: string;
@@ -530,7 +542,7 @@ function handleIncoming(msg: WireMessage): void {
       const mon = crossNodeMonitors.get(refId);
       if (mon) {
         Proc.send(mon.localPid, {
-          type: 'DOWN',
+          type: "DOWN",
           ref: mon.localRef,
           pid: remotePid,
           reason,
@@ -539,11 +551,14 @@ function handleIncoming(msg: WireMessage): void {
       }
       break;
     }
-    case 'spawn_kill': {
-      const { linkId, reason } = msg.payload as { linkId: string; reason: unknown };
+    case "spawn_kill": {
+      const { linkId, reason } = msg.payload as {
+        linkId: string;
+        reason: unknown;
+      };
       const pid = remoteSpawnRegistry.get(linkId);
       if (pid) {
-        Proc.exit(pid, reason ?? 'kill');
+        Proc.exit(pid, reason ?? "kill");
         remoteSpawnRegistry.delete(linkId);
       }
       break;

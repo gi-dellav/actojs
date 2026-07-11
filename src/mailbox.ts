@@ -2,10 +2,10 @@
 // Delegates to ActorSystem.current for all state.
 // Web runtime: promise-based cooperative multiplexing.
 
-import type { PID, ProcessInfo } from './types';
-import { ActorSystem, type ProcessState } from './system';
+import type { PID, ProcessInfo } from "./types";
+import { ActorSystem, type ProcessState } from "./system";
 
-export type { ProcessState } from './system';
+export type { ProcessState } from "./system";
 
 export function generatePid(): PID {
   return ActorSystem.current.generatePid();

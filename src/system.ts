@@ -2,14 +2,14 @@
 // Each ActorSystem owns its own process table, name registry, PID counter,
 // pending calls, task results, and timers. Systems are fully isolated.
 
-import type { PID, Ref, ProcessInfo } from './types';
-export * as Mailbox from './mailbox';
-export * as Types from './types';
+import type { PID, Ref, ProcessInfo } from "./types";
+export * as Mailbox from "./mailbox";
+export * as Types from "./types";
 
 export class TimeoutError extends Error {
-  constructor(message = 'timeout') {
+  constructor(message = "timeout") {
     super(message);
-    this.name = 'TimeoutError';
+    this.name = "TimeoutError";
   }
 }
 
@@ -40,7 +40,7 @@ export interface ProcessState {
   monitors: Map<Ref, PID>;
   monitoredBy: Map<PID, Ref[]>;
   trapExit: boolean;
-  status: 'running' | 'alive' | 'exiting' | 'exited';
+  status: "running" | "alive" | "exiting" | "exited";
   exitReason: unknown;
   processDict: Map<string, unknown>;
   registeredName: string | null;
@@ -71,7 +71,7 @@ export interface PendingCall {
 }
 
 export interface TaskResult {
-  status: 'pending' | 'done' | 'error';
+  status: "pending" | "done" | "error";
   value?: unknown;
   error?: unknown;
 }
@@ -106,10 +106,10 @@ export class ActorSystem {
   // System-wide defaults for process resource limits.
   // Individual processes override these via SpawnOptions.limits or Process.flag().
   // 0 = unlimited / disabled.
-  defaultMessageBudget = 100;   // yield every 100 messages
-  defaultMaxMailboxSize = 0;    // unlimited (backward-compatible)
-  defaultExecTimeout = 0;       // no timeout (backward-compatible)
-  defaultMaxMemory = 0;         // no limit (backward-compatible)
+  defaultMessageBudget = 100; // yield every 100 messages
+  defaultMaxMailboxSize = 0; // unlimited (backward-compatible)
+  defaultExecTimeout = 0; // no timeout (backward-compatible)
+  defaultMaxMemory = 0; // no limit (backward-compatible)
 
   private static _default: ActorSystem | null = null;
 
@@ -120,8 +120,9 @@ export class ActorSystem {
     if (ActorSystem._memApi === null) {
       try {
         ActorSystem._memApi =
-          typeof process !== 'undefined' &&
-          typeof (process as unknown as Record<string, unknown>).memoryUsage === 'function';
+          typeof process !== "undefined" &&
+          typeof (process as unknown as Record<string, unknown>).memoryUsage ===
+            "function";
       } catch {
         ActorSystem._memApi = false;
       }
@@ -130,10 +131,24 @@ export class ActorSystem {
   }
 
   // Calls process.memoryUsage() if available; returns null on web targets.
-  static getMemoryUsage(): { rss: number; heapTotal: number; heapUsed: number; external: number } | null {
+  static getMemoryUsage(): {
+    rss: number;
+    heapTotal: number;
+    heapUsed: number;
+    external: number;
+  } | null {
     if (!ActorSystem.hasMemoryAPI) return null;
     try {
-      return (process as unknown as { memoryUsage(): { rss: number; heapTotal: number; heapUsed: number; external: number } }).memoryUsage();
+      return (
+        process as unknown as {
+          memoryUsage(): {
+            rss: number;
+            heapTotal: number;
+            heapUsed: number;
+            external: number;
+          };
+        }
+      ).memoryUsage();
     } catch {
       return null;
     }
@@ -141,8 +156,8 @@ export class ActorSystem {
 
   /** Construct a new isolated actor system with an optional human-readable name. */
   constructor(name?: string) {
-    this.name = name ?? '';
-    this.systemId = name ? name : '0';
+    this.name = name ?? "";
+    this.systemId = name ? name : "0";
   }
 
   // ---- PID generation ----------------------------------------------------
@@ -150,7 +165,7 @@ export class ActorSystem {
   /** Generate a fresh, monotonically increasing PID scoped to this system. */
   generatePid(): PID {
     const c = this.nextPidCounter++;
-    if (this.systemId === '0') {
+    if (this.systemId === "0") {
       return `#PID<0.${c}.0>`;
     }
     return `#PID<${this.systemId}@0.${c}.0>`;
@@ -169,7 +184,7 @@ export class ActorSystem {
       monitors: new Map(),
       monitoredBy: new Map(),
       trapExit: false,
-      status: 'running',
+      status: "running",
       exitReason: null,
       processDict: new Map(),
       registeredName: null,
@@ -253,15 +268,22 @@ export class ActorSystem {
   deliverMessage(pid: PID, msg: unknown): void {
     const proc = this.processes.get(pid);
     if (!proc) return;
-    if (proc.status === 'exited' || proc.status === 'exiting') return;
+    if (proc.status === "exited" || proc.status === "exiting") return;
 
     // Mailbox overflow guard — skip for SYSTEM messages to avoid recursion.
-    const isSystem = msg != null && typeof msg === 'object' && (msg as Record<string, unknown>).type === 'SYSTEM';
+    const isSystem =
+      msg != null &&
+      typeof msg === "object" &&
+      (msg as Record<string, unknown>).type === "SYSTEM";
     const mboxLen = proc.mailbox.length - proc.mailboxHead;
-    if (!isSystem && proc.maxMailboxSize > 0 && mboxLen >= proc.maxMailboxSize) {
+    if (
+      !isSystem &&
+      proc.maxMailboxSize > 0 &&
+      mboxLen >= proc.maxMailboxSize
+    ) {
       const overflowMsg = {
-        type: 'SYSTEM',
-        subtype: 'mailbox_overflow',
+        type: "SYSTEM",
+        subtype: "mailbox_overflow",
         size: mboxLen,
         limit: proc.maxMailboxSize,
         droppedType: typeof msg,
@@ -301,10 +323,10 @@ export class ActorSystem {
    */
   receiveMessage(pid?: PID, timeout?: number): Promise<unknown> {
     const effectivePid = pid ?? this.getCurrentPid();
-    if (!effectivePid) return Promise.reject(new Error('not inside a process'));
+    if (!effectivePid) return Promise.reject(new Error("not inside a process"));
 
     const proc = this.processes.get(effectivePid);
-    if (!proc) return Promise.reject(new Error('process not found'));
+    if (!proc) return Promise.reject(new Error("process not found"));
 
     if (proc.mailbox.length > proc.mailboxHead) {
       const msg = proc.mailbox[proc.mailboxHead];
@@ -319,7 +341,7 @@ export class ActorSystem {
         proc.recvTimer = setTimeout(() => {
           proc.recvResolve = null;
           proc.recvTimer = undefined;
-          reject(new TimeoutError('receive timed out'));
+          reject(new TimeoutError("receive timed out"));
         }, timeout);
       }
     });
@@ -333,7 +355,10 @@ export class ActorSystem {
 
   // Compact a process mailbox when the head pointer has advanced far enough.
   compactMailbox(proc: ProcessState): void {
-    if (proc.mailboxHead > 1000 || proc.mailboxHead >= proc.mailbox.length / 2) {
+    if (
+      proc.mailboxHead > 1000 ||
+      proc.mailboxHead >= proc.mailbox.length / 2
+    ) {
       if (proc.mailboxHead >= proc.mailbox.length) {
         proc.mailbox = [];
       } else {
@@ -347,7 +372,8 @@ export class ActorSystem {
   // Returns undefined if the mailbox is empty.
   shiftMessage(pid: PID): unknown | undefined {
     const proc = this.processes.get(pid);
-    if (!proc || proc.status === 'exited' || proc.status === 'exiting') return undefined;
+    if (!proc || proc.status === "exited" || proc.status === "exiting")
+      return undefined;
     if (proc.mailbox.length <= proc.mailboxHead) return undefined;
     const msg = proc.mailbox[proc.mailboxHead];
     proc.mailboxHead++;
@@ -366,7 +392,7 @@ export class ActorSystem {
 
   /** Perform the full exit protocol: notify links and monitors, then deregister. */
   handleExit(proc: ProcessState): void {
-    proc.status = 'exited';
+    proc.status = "exited";
 
     const report: ExitReport = {
       pid: proc.pid,
@@ -376,12 +402,16 @@ export class ActorSystem {
       links: Array.from(proc.links),
     };
 
-    if (proc.exitReason !== 'normal' && proc.exitReason !== 'shutdown') {
-      console.error(`[actojs] Process ${proc.pid}${proc.registeredName ? ` (${proc.registeredName})` : ''} exited: ${String(proc.exitReason)}`);
+    if (proc.exitReason !== "normal" && proc.exitReason !== "shutdown") {
+      console.error(
+        `[actojs] Process ${proc.pid}${proc.registeredName ? ` (${proc.registeredName})` : ""} exited: ${String(proc.exitReason)}`,
+      );
     }
 
     if (this.onExit) {
-      try { this.onExit(report); } catch (_) {}
+      try {
+        this.onExit(report);
+      } catch (_) {}
     }
 
     // Unblock any process waiting on receive()
@@ -398,15 +428,15 @@ export class ActorSystem {
     // Notify linked processes
     proc.links.forEach((linkedPid) => {
       const linked = this.processes.get(linkedPid);
-      if (linked && linked.status !== 'exited' && linked.status !== 'exiting') {
+      if (linked && linked.status !== "exited" && linked.status !== "exiting") {
         if (linked.trapExit) {
           this.deliverMessage(linkedPid, {
-            type: 'EXIT',
+            type: "EXIT",
             from: proc.pid,
             reason: proc.exitReason,
           });
         } else {
-          linked.status = 'exiting';
+          linked.status = "exiting";
           linked.exitReason = proc.exitReason;
           this.handleExit(linked);
         }
@@ -416,10 +446,10 @@ export class ActorSystem {
     // Notify monitoring processes
     proc.monitoredBy.forEach((refs, monitorPid) => {
       const monitor = this.processes.get(monitorPid);
-      if (monitor && monitor.status !== 'exited') {
+      if (monitor && monitor.status !== "exited") {
         for (const ref of refs) {
           this.deliverMessage(monitorPid, {
-            type: 'DOWN',
+            type: "DOWN",
             ref,
             pid: proc.pid,
             reason: proc.exitReason,
@@ -445,8 +475,14 @@ export class ActorSystem {
       execTimeoutCount: proc.execTimeoutCount,
       maxMemory: proc.maxMemory,
       links: Array.from(proc.links),
-      monitors: Array.from(proc.monitors.entries()).map(([ref, p]) => ({ ref, pid: p })),
-      monitoredBy: Array.from(proc.monitoredBy.entries()).map(([p, refs]) => ({ pid: p, ref: refs })),
+      monitors: Array.from(proc.monitors.entries()).map(([ref, p]) => ({
+        ref,
+        pid: p,
+      })),
+      monitoredBy: Array.from(proc.monitoredBy.entries()).map(([p, refs]) => ({
+        pid: p,
+        ref: refs,
+      })),
       trapExit: proc.trapExit,
       registeredName: proc.registeredName,
     };
@@ -468,14 +504,14 @@ export class ActorSystem {
   // Perform the actual event-loop yield plus memory check.
   // Call this only when countMessage returns true or at safe boundaries.
   async doYield(pid: PID): Promise<void> {
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     const proc = this.processes.get(pid);
     if (proc && proc.maxMemory > 0) {
       const mem = ActorSystem.getMemoryUsage();
       if (mem && mem.rss > proc.maxMemory) {
         this.deliverMessage(pid, {
-          type: 'SYSTEM',
-          subtype: 'memory_limit',
+          type: "SYSTEM",
+          subtype: "memory_limit",
           usage: mem.rss,
           limit: proc.maxMemory,
         });
@@ -499,15 +535,15 @@ export class ActorSystem {
     }
 
     // Yield to the event loop so other actors get a turn.
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     // Memory budget check at every yield point.
     if (proc.maxMemory > 0) {
       const mem = ActorSystem.getMemoryUsage();
       if (mem && mem.rss > proc.maxMemory) {
         this.deliverMessage(pid, {
-          type: 'SYSTEM',
-          subtype: 'memory_limit',
+          type: "SYSTEM",
+          subtype: "memory_limit",
           usage: mem.rss,
           limit: proc.maxMemory,
         });
@@ -525,8 +561,14 @@ export class ActorSystem {
       const result = fn();
       if (result instanceof Promise) {
         return result
-          .then(v => { this.pidStack.pop(); return v; })
-          .catch(e => { this.pidStack.pop(); throw e; }) as unknown as T;
+          .then((v) => {
+            this.pidStack.pop();
+            return v;
+          })
+          .catch((e) => {
+            this.pidStack.pop();
+            throw e;
+          }) as unknown as T;
       }
       this.pidStack.pop();
       return result;
@@ -570,8 +612,14 @@ export class ActorSystem {
       const result = fn();
       if (result instanceof Promise) {
         return result
-          .then(v => { _current = prev; return v; })
-          .catch(e => { _current = prev; throw e; }) as unknown as T;
+          .then((v) => {
+            _current = prev;
+            return v;
+          })
+          .catch((e) => {
+            _current = prev;
+            throw e;
+          }) as unknown as T;
       }
       _current = prev;
       return result;

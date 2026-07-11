@@ -2,15 +2,23 @@
 // Web runtime: cooperative event-loop, built on GenServer.
 
 import type {
-  PID, ChildSpec, ChildInfo, Counts,
-  Strategy, SupervisorStartOptions, SupervisorInitOptions, SupervisorSpec,
-  OnStart, OnStartChild,
-  DownMessage, Module,
-} from './types';
-import type { From } from './system';
-import { ActorSystem } from './system';
-import * as Proc from './process';
-import * as GS from './gen_server';
+  PID,
+  ChildSpec,
+  ChildInfo,
+  Counts,
+  Strategy,
+  SupervisorStartOptions,
+  SupervisorInitOptions,
+  SupervisorSpec,
+  OnStart,
+  OnStartChild,
+  DownMessage,
+  Module,
+} from "./types";
+import type { From } from "./system";
+import { ActorSystem } from "./system";
+import * as Proc from "./process";
+import * as GS from "./gen_server";
 
 interface SupervisorModule {
   init: (arg?: unknown) => SupervisorSpec;
@@ -37,9 +45,9 @@ const DEFAULT_MAX_SECONDS = 5;
 
 function normalizeSpec(spec: ChildSpec): ChildSpec {
   return {
-    restart: 'permanent',
+    restart: "permanent",
     shutdown: 5000,
-    type: 'worker',
+    type: "worker",
     ...spec,
   };
 }
@@ -60,12 +68,14 @@ export async function start_link(
 
   if (Array.isArray(childrenOrModule)) {
     children = childrenOrModule;
-    opts = (initArgOrOpts as SupervisorStartOptions) ?? { strategy: 'one_for_one' };
+    opts = (initArgOrOpts as SupervisorStartOptions) ?? {
+      strategy: "one_for_one",
+    };
   } else {
     const mod = childrenOrModule;
     const initArg = initArgOrOpts;
-    opts = (maybeOpts as SupervisorStartOptions) ?? { strategy: 'one_for_one' };
-    if (typeof mod.init === 'function') {
+    opts = (maybeOpts as SupervisorStartOptions) ?? { strategy: "one_for_one" };
+    if (typeof mod.init === "function") {
       const spec: SupervisorSpec = mod.init(initArg);
       children = spec.children;
       opts = {
@@ -74,15 +84,18 @@ export async function start_link(
         max_seconds: spec.max_seconds,
       };
     } else {
-      return { error: new Error('module must have an init method') };
+      return { error: new Error("module must have an init method") };
     }
   }
 
   return startSupervisor(children, opts);
 }
 
-async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptions): Promise<OnStart> {
-  const strategy = opts.strategy ?? 'one_for_one';
+async function startSupervisor(
+  children: ChildSpec[],
+  opts: SupervisorStartOptions,
+): Promise<OnStart> {
+  const strategy = opts.strategy ?? "one_for_one";
   const maxRestarts = opts.max_restarts ?? DEFAULT_MAX_RESTARTS;
   const maxSeconds = opts.max_seconds ?? DEFAULT_MAX_SECONDS;
 
@@ -99,7 +112,9 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
 
   const result = GS.start_link<SupervisorState>(
     {
-      async init(_args: unknown): Promise<{ ok: SupervisorState } | { error: unknown }> {
+      async init(
+        _args: unknown,
+      ): Promise<{ ok: SupervisorState } | { error: unknown }> {
         const supPid = Proc.self();
 
         const started = new Map<string, ChildState>();
@@ -108,10 +123,11 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
         for (const spec of children) {
           const normalized = normalizeSpec(spec);
           const childResult = await startChildSpec(normalized);
-          if ('error' in childResult) {
+          if ("error" in childResult) {
             started.forEach((cs, id) => {
-              Proc.exit(cs.pid, 'shutdown');
-            });            return { error: childResult.error };
+              Proc.exit(cs.pid, "shutdown");
+            });
+            return { error: childResult.error };
           }
           const pid = (childResult as { ok: PID }).ok;
           Proc.monitor(pid, supPid);
@@ -127,21 +143,29 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
         return { ok: initState };
       },
 
-      async handle_call(msg: unknown, from: From, s: SupervisorState, supPid: PID): Promise<{ reply: unknown; state: SupervisorState } | { noreply: unknown; state: SupervisorState }> {
+      async handle_call(
+        msg: unknown,
+        from: From,
+        s: SupervisorState,
+        supPid: PID,
+      ): Promise<
+        | { reply: unknown; state: SupervisorState }
+        | { noreply: unknown; state: SupervisorState }
+      > {
         const { type, payload } = msg as { type: string; payload: unknown };
 
-        if (type === 'count_children') {
+        if (type === "count_children") {
           return { reply: countChildren(s), state: s };
         }
 
-        if (type === 'which_children') {
+        if (type === "which_children") {
           return { reply: whichChildren(s), state: s };
         }
 
-        if (type === 'start_child') {
+        if (type === "start_child") {
           const spec = normalizeSpec(payload as ChildSpec);
           const childResult = await startChildSpec(spec);
-          if ('error' in childResult) {
+          if ("error" in childResult) {
             return { reply: childResult, state: s };
           }
           const pid = (childResult as { ok: PID }).ok;
@@ -152,21 +176,21 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
           return { reply: childResult, state: s };
         }
 
-        if (type === 'terminate_child') {
+        if (type === "terminate_child") {
           const childId = payload as string;
           const child = s.children.get(childId);
-          if (!child) return { reply: { error: 'not_found' }, state: s };
+          if (!child) return { reply: { error: "not_found" }, state: s };
           const shutdown = child.spec.shutdown;
-          if (shutdown === 'brutal_kill') {
-            Proc.exit(child.pid, 'killed');
-          } else if (shutdown === 'infinity') {
-            Proc.exit(child.pid, 'shutdown');
+          if (shutdown === "brutal_kill") {
+            Proc.exit(child.pid, "killed");
+          } else if (shutdown === "infinity") {
+            Proc.exit(child.pid, "shutdown");
           } else {
-            const ms = typeof shutdown === 'number' ? shutdown : 5000;
-            Proc.exit(child.pid, 'shutdown');
+            const ms = typeof shutdown === "number" ? shutdown : 5000;
+            Proc.exit(child.pid, "shutdown");
             setTimeout(() => {
               if (Proc.alive(child.pid)) {
-                Proc.exit(child.pid, 'killed');
+                Proc.exit(child.pid, "killed");
               }
             }, ms);
           }
@@ -174,26 +198,26 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
           return { reply: undefined, state: s };
         }
 
-        if (type === 'delete_child') {
+        if (type === "delete_child") {
           const childId = payload as string;
           const child = s.children.get(childId);
-          if (child) return { reply: { error: 'child_running' }, state: s };
+          if (child) return { reply: { error: "child_running" }, state: s };
           return { reply: undefined, state: s };
         }
 
-        if (type === 'restart_child') {
+        if (type === "restart_child") {
           const childId = payload as string;
           const child = s.children.get(childId);
           if (child) {
-            Proc.exit(child.pid, 'shutdown');
+            Proc.exit(child.pid, "shutdown");
             s.children.delete(childId);
           }
           const originalSpec = s.specs.get(childId);
           if (!originalSpec) {
-            return { reply: { error: 'not_found' }, state: s };
+            return { reply: { error: "not_found" }, state: s };
           }
           const childResult = await startChildSpec(originalSpec);
-          if ('error' in childResult) {
+          if ("error" in childResult) {
             return { reply: childResult, state: s };
           }
           const pid = (childResult as { ok: PID }).ok;
@@ -205,14 +229,14 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
           return { reply: childResult, state: s };
         }
 
-        if (type === 'stop') {
+        if (type === "stop") {
           s.isShuttingDown = true;
           const { reason } = payload as { reason?: unknown };
           const reversed = [...s.childOrder].reverse();
           for (const childId of reversed) {
             const child = s.children.get(childId);
             if (child) {
-              Proc.exit(child.pid, reason ?? 'shutdown');
+              Proc.exit(child.pid, reason ?? "shutdown");
             }
           }
           s.children.clear();
@@ -224,12 +248,25 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
         return { reply: undefined, state: s };
       },
 
-      async handle_info(msg: unknown, s: SupervisorState, supPid: PID): Promise<{ noreply: unknown; state: SupervisorState }> {
+      async handle_info(
+        msg: unknown,
+        s: SupervisorState,
+        supPid: PID,
+      ): Promise<{ noreply: unknown; state: SupervisorState }> {
         if (s.isShuttingDown) return { noreply: undefined, state: s };
 
-        if (msg && typeof msg === 'object' && msg !== null && (msg as DownMessage).type === 'DOWN') {
+        if (
+          msg &&
+          typeof msg === "object" &&
+          msg !== null &&
+          (msg as DownMessage).type === "DOWN"
+        ) {
           const { pid: downPid, reason } = msg as DownMessage;
-          if (reason === 'normal' || reason === 'shutdown' || reason === 'killed') {
+          if (
+            reason === "normal" ||
+            reason === "shutdown" ||
+            reason === "killed"
+          ) {
             let exitedId: string | null = null;
             s.children.forEach((child, id) => {
               if (child.pid === downPid) {
@@ -239,7 +276,7 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
             });
             if (exitedId) {
               s.children.delete(exitedId);
-              s.childOrder = s.childOrder.filter(id => id !== exitedId);
+              s.childOrder = s.childOrder.filter((id) => id !== exitedId);
             }
             return { noreply: undefined, state: s };
           }
@@ -256,21 +293,27 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
           const failedSpec = s.children.get(failedId)?.spec;
           const failedIdx = s.childOrder.indexOf(failedId);
           s.children.delete(failedId);
-          s.childOrder = s.childOrder.filter(id => id !== failedId);
+          s.childOrder = s.childOrder.filter((id) => id !== failedId);
 
           if (!checkRestartRate(s)) {
             s.isShuttingDown = true;
             const reversed = [...s.childOrder].reverse();
             for (const childId of reversed) {
               const child = s.children.get(childId);
-              if (child) Proc.exit(child.pid, 'shutdown');
+              if (child) Proc.exit(child.pid, "shutdown");
             }
-            Proc.exit(supPid, 'shutdown');
+            Proc.exit(supPid, "shutdown");
             return { noreply: undefined, state: s };
           }
 
-          if (failedSpec && failedSpec.restart !== 'temporary') {
-            await applyRestartStrategy(s, failedId, failedSpec, failedIdx, supPid);
+          if (failedSpec && failedSpec.restart !== "temporary") {
+            await applyRestartStrategy(
+              s,
+              failedId,
+              failedSpec,
+              failedIdx,
+              supPid,
+            );
           }
         }
 
@@ -279,7 +322,9 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
 
       async terminate(reason: unknown, s: SupervisorState): Promise<void> {
         s.children.forEach((child) => {
-          try { Proc.exit(child.pid, reason ?? 'shutdown'); } catch (_) {}
+          try {
+            Proc.exit(child.pid, reason ?? "shutdown");
+          } catch (_) {}
         });
       },
     },
@@ -293,7 +338,10 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
 // ---- init (for module-based supervisors) ----------------------------------
 
 /** Build a SupervisorSpec for module-based supervisors from child specs and options. */
-export function init(children: ChildSpec[], opts: SupervisorInitOptions = { strategy: 'one_for_one' }): SupervisorSpec {
+export function init(
+  children: ChildSpec[],
+  opts: SupervisorInitOptions = { strategy: "one_for_one" },
+): SupervisorSpec {
   return {
     children,
     strategy: opts.strategy,
@@ -311,15 +359,22 @@ export function child_spec(
   moduleOrSpec: ChildSpec | Record<string, unknown>,
   overrides?: Partial<ChildSpec>,
 ): ChildSpec {
-  if (typeof moduleOrSpec === 'object' && 'id' in moduleOrSpec) {
+  if (typeof moduleOrSpec === "object" && "id" in moduleOrSpec) {
     return { ...(moduleOrSpec as ChildSpec), ...overrides };
   }
-  if (typeof (moduleOrSpec as Record<string, unknown>).child_spec === 'function') {
-    return { ...((moduleOrSpec as Record<string, unknown>).child_spec as () => ChildSpec)(), ...overrides };
+  if (
+    typeof (moduleOrSpec as Record<string, unknown>).child_spec === "function"
+  ) {
+    return {
+      ...(
+        (moduleOrSpec as Record<string, unknown>).child_spec as () => ChildSpec
+      )(),
+      ...overrides,
+    };
   }
   return {
-    id: (moduleOrSpec as Record<string, unknown>)?.name as string ?? 'child',
-    start: [moduleOrSpec as Module, 'start_link', []],
+    id: ((moduleOrSpec as Record<string, unknown>)?.name as string) ?? "child",
+    start: [moduleOrSpec as Module, "start_link", []],
     ...overrides,
   };
 }
@@ -328,17 +383,36 @@ export function child_spec(
 
 /** Return counts of specs, active children, supervisors, and workers. */
 export function count_children(sup: PID, timeout?: number): Promise<Counts> {
-  return GS.call(sup, { type: 'count_children', payload: null }, timeout) as Promise<Counts>;
+  return GS.call(
+    sup,
+    { type: "count_children", payload: null },
+    timeout,
+  ) as Promise<Counts>;
 }
 
 /** Return information about all alive children managed by the supervisor. */
-export function which_children(sup: PID, timeout?: number): Promise<ChildInfo[]> {
-  return GS.call(sup, { type: 'which_children', payload: null }, timeout) as Promise<ChildInfo[]>;
+export function which_children(
+  sup: PID,
+  timeout?: number,
+): Promise<ChildInfo[]> {
+  return GS.call(
+    sup,
+    { type: "which_children", payload: null },
+    timeout,
+  ) as Promise<ChildInfo[]>;
 }
 
 /** Dynamically add a new child to the supervisor at runtime. */
-export function start_child(sup: PID, spec: ChildSpec, timeout?: number): Promise<OnStartChild> {
-  return GS.call(sup, { type: 'start_child', payload: spec }, timeout) as Promise<OnStartChild>;
+export function start_child(
+  sup: PID,
+  spec: ChildSpec,
+  timeout?: number,
+): Promise<OnStartChild> {
+  return GS.call(
+    sup,
+    { type: "start_child", payload: spec },
+    timeout,
+  ) as Promise<OnStartChild>;
 }
 
 /** Stop a child by its spec id, respecting the shutdown value from its ChildSpec. */
@@ -347,7 +421,11 @@ export function terminate_child(
   childId: string,
   timeout?: number,
 ): Promise<void | { error: string }> {
-  return GS.call(sup, { type: 'terminate_child', payload: childId }, timeout) as Promise<void | { error: string }>;
+  return GS.call(
+    sup,
+    { type: "terminate_child", payload: childId },
+    timeout,
+  ) as Promise<void | { error: string }>;
 }
 
 /** Remove a child's spec from the supervisor. Fails if the child is still running. */
@@ -356,28 +434,46 @@ export function delete_child(
   childId: string,
   timeout?: number,
 ): Promise<void | { error: string }> {
-  return GS.call(sup, { type: 'delete_child', payload: childId }, timeout) as Promise<void | { error: string }>;
+  return GS.call(
+    sup,
+    { type: "delete_child", payload: childId },
+    timeout,
+  ) as Promise<void | { error: string }>;
 }
 
 /** Stop and restart a child by its spec id. */
-export function restart_child(sup: PID, childId: string, timeout?: number): Promise<OnStartChild> {
-  return GS.call(sup, { type: 'restart_child', payload: childId }, timeout) as Promise<OnStartChild>;
+export function restart_child(
+  sup: PID,
+  childId: string,
+  timeout?: number,
+): Promise<OnStartChild> {
+  return GS.call(
+    sup,
+    { type: "restart_child", payload: childId },
+    timeout,
+  ) as Promise<OnStartChild>;
 }
 
 /** Gracefully shut down the supervisor and all its children. */
-export async function stop(sup: PID, reason?: unknown, timeout?: number): Promise<void> {
-  await GS.call(sup, { type: 'stop', payload: { reason } }, timeout);
+export async function stop(
+  sup: PID,
+  reason?: unknown,
+  timeout?: number,
+): Promise<void> {
+  await GS.call(sup, { type: "stop", payload: { reason } }, timeout);
 }
 
 // ---- internal helpers -----------------------------------------------------
 
 async function startChildSpec(spec: ChildSpec): Promise<OnStartChild> {
   const [module, fnName, args] = spec.start;
-  if (typeof module !== 'object' || module === null) {
-    return { error: new Error('invalid start spec: module must be an object') };
+  if (typeof module !== "object" || module === null) {
+    return { error: new Error("invalid start spec: module must be an object") };
   }
-  if (typeof module[fnName] !== 'function') {
-    return { error: new Error(`function ${String(fnName)} not found on module`) };
+  if (typeof module[fnName] !== "function") {
+    return {
+      error: new Error(`function ${String(fnName)} not found on module`),
+    };
   }
   try {
     return await module[fnName](...args);
@@ -396,7 +492,7 @@ function countChildren(s: SupervisorState): Counts {
     specs++;
     if (Proc.alive(child.pid)) {
       active++;
-      if (child.spec.type === 'supervisor') supervisors++;
+      if (child.spec.type === "supervisor") supervisors++;
       else workers++;
     }
   });
@@ -411,7 +507,7 @@ function whichChildren(s: SupervisorState): ChildInfo[] {
       result.push({
         id,
         pid: child.pid,
-        type: child.spec.type ?? 'worker',
+        type: child.spec.type ?? "worker",
         modules: [child.spec.start[0]],
       });
     }
@@ -423,7 +519,7 @@ function checkRestartRate(s: SupervisorState): boolean {
   const now = Date.now();
   const windowMs = s.maxSeconds * 1000;
 
-  s.restartCounters = s.restartCounters.filter(c => now - c.time < windowMs);
+  s.restartCounters = s.restartCounters.filter((c) => now - c.time < windowMs);
 
   const total = s.restartCounters.reduce((sum, c) => sum + c.count, 0);
   if (total >= s.maxRestarts) return false;
@@ -432,19 +528,25 @@ function checkRestartRate(s: SupervisorState): boolean {
   return true;
 }
 
-async function applyRestartStrategy(s: SupervisorState, failedId: string, failedSpec: ChildSpec, failedIdx: number, supPid: PID): Promise<void> {
+async function applyRestartStrategy(
+  s: SupervisorState,
+  failedId: string,
+  failedSpec: ChildSpec,
+  failedIdx: number,
+  supPid: PID,
+): Promise<void> {
   // Check significant flag
   if (failedSpec.significant) {
     s.isShuttingDown = true;
     s.children.forEach((child) => {
-      Proc.exit(child.pid, 'shutdown');
+      Proc.exit(child.pid, "shutdown");
     });
-    Proc.exit(supPid, 'shutdown');
+    Proc.exit(supPid, "shutdown");
     return;
   }
 
   switch (s.strategy) {
-    case 'one_for_one': {
+    case "one_for_one": {
       const oldPid = s.children.get(failedId)?.pid;
       await restartChild(s, failedId, failedSpec, supPid);
       const newChild = s.children.get(failedId);
@@ -453,7 +555,7 @@ async function applyRestartStrategy(s: SupervisorState, failedId: string, failed
       }
       break;
     }
-    case 'one_for_all': {
+    case "one_for_all": {
       const oldPids = new Map<string, PID>();
       const allIds: string[] = [];
       s.specs.forEach((_, id) => {
@@ -481,7 +583,7 @@ async function applyRestartStrategy(s: SupervisorState, failedId: string, failed
       }
       break;
     }
-    case 'rest_for_one': {
+    case "rest_for_one": {
       const oldPids = new Map<string, PID>();
       const afterIds: string[] = [];
       let foundFailed = false;
@@ -497,8 +599,17 @@ async function applyRestartStrategy(s: SupervisorState, failedId: string, failed
       const oldFailedPid = s.children.get(failedId)?.pid;
       await restartChild(s, failedId, failedSpec, supPid);
       const newFailedChild = s.children.get(failedId);
-      if (oldFailedPid && newFailedChild && newFailedChild.pid !== oldFailedPid) {
-        sendRestartNotification(supPid, failedId, oldFailedPid, newFailedChild.pid);
+      if (
+        oldFailedPid &&
+        newFailedChild &&
+        newFailedChild.pid !== oldFailedPid
+      ) {
+        sendRestartNotification(
+          supPid,
+          failedId,
+          oldFailedPid,
+          newFailedChild.pid,
+        );
       }
 
       // Then kill and restart all children after it
@@ -509,7 +620,7 @@ async function applyRestartStrategy(s: SupervisorState, failedId: string, failed
           killChildWithGrace(child.pid, child.spec);
           s.children.delete(id);
         }
-        s.childOrder = s.childOrder.filter(oid => oid !== id);
+        s.childOrder = s.childOrder.filter((oid) => oid !== id);
       }
       for (const id of afterIds) {
         const spec = s.specs.get(id);
@@ -529,28 +640,33 @@ async function applyRestartStrategy(s: SupervisorState, failedId: string, failed
 
 function killChildWithGrace(pid: PID, spec: ChildSpec): void {
   const shutdown = spec.shutdown ?? 5000;
-  if (shutdown === 'brutal_kill') {
-    Proc.exit(pid, 'killed');
-  } else if (shutdown === 'infinity') {
-    Proc.exit(pid, 'shutdown');
+  if (shutdown === "brutal_kill") {
+    Proc.exit(pid, "killed");
+  } else if (shutdown === "infinity") {
+    Proc.exit(pid, "shutdown");
   } else {
-    const ms = typeof shutdown === 'number' ? shutdown : 5000;
-    Proc.exit(pid, 'shutdown');
+    const ms = typeof shutdown === "number" ? shutdown : 5000;
+    Proc.exit(pid, "shutdown");
     setTimeout(() => {
       if (Proc.alive(pid)) {
-        Proc.exit(pid, 'killed');
+        Proc.exit(pid, "killed");
       }
     }, ms);
   }
 }
 
-function sendRestartNotification(supPid: PID, childId: string, oldPid: PID, newPid: PID): void {
+function sendRestartNotification(
+  supPid: PID,
+  childId: string,
+  oldPid: PID,
+  newPid: PID,
+): void {
   const sys = ActorSystem.current;
   const sup = sys.getProcess(supPid);
   if (sup) {
     sup.links.forEach((linkedPid) => {
       sys.deliverMessage(linkedPid, {
-        type: 'RESTARTED',
+        type: "RESTARTED",
         childId,
         oldPid,
         newPid,
@@ -558,7 +674,7 @@ function sendRestartNotification(supPid: PID, childId: string, oldPid: PID, newP
     });
     sup.monitoredBy.forEach((_, monitorPid) => {
       sys.deliverMessage(monitorPid, {
-        type: 'RESTARTED',
+        type: "RESTARTED",
         childId,
         oldPid,
         newPid,
@@ -567,9 +683,14 @@ function sendRestartNotification(supPid: PID, childId: string, oldPid: PID, newP
   }
 }
 
-async function restartChild(s: SupervisorState, id: string, spec: ChildSpec, supPid: PID): Promise<void> {
+async function restartChild(
+  s: SupervisorState,
+  id: string,
+  spec: ChildSpec,
+  supPid: PID,
+): Promise<void> {
   const result = await startChildSpec(spec);
-  if ('ok' in result) {
+  if ("ok" in result) {
     Proc.monitor(result.ok, supPid);
     s.children.set(id, { spec, pid: result.ok });
     if (!s.childOrder.includes(id)) {
