@@ -383,7 +383,7 @@ export class ActorSystem {
     }
 
     // Notify linked processes
-    for (const linkedPid of proc.links) {
+    proc.links.forEach((linkedPid) => {
       const linked = this.processes.get(linkedPid);
       if (linked && linked.status !== 'exited' && linked.status !== 'exiting') {
         if (linked.trapExit) {
@@ -398,10 +398,10 @@ export class ActorSystem {
           this.handleExit(linked);
         }
       }
-    }
+    });
 
     // Notify monitoring processes
-    for (const [monitorPid, refs] of proc.monitoredBy) {
+    proc.monitoredBy.forEach((refs, monitorPid) => {
       const monitor = this.processes.get(monitorPid);
       if (monitor && monitor.status !== 'exited') {
         for (const ref of refs) {
@@ -413,7 +413,7 @@ export class ActorSystem {
           });
         }
       }
-    }
+    });
 
     this.deregisterProcess(proc.pid);
   }

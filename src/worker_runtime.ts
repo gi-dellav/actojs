@@ -257,7 +257,7 @@ export class WorkerRuntime {
         const refKey = args[0] as string;
         const c = sys.getProcess(pid);
         if (!c) return;
-        for (const [ref, monitoredPid] of c.monitors) {
+        c.monitors.forEach((monitoredPid, ref) => {
           if (ref.description === refKey) {
             c.monitors.delete(ref);
             const o = sys.getProcess(monitoredPid);
@@ -266,9 +266,9 @@ export class WorkerRuntime {
               if (refs.length > 0) o.monitoredBy.set(pid, refs);
               else o.monitoredBy.delete(pid);
             }
-            break;
+            return;
           }
-        }
+        });
         return;
       }
       case 'send_after': {

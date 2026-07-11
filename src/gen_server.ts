@@ -51,6 +51,7 @@ export interface TerminateInfo {
 export interface StartOpts {
   /** Register the process under this local name on start. */
   name?: string;
+  link?: boolean;
 }
 
 // ---- start / start_link ---------------------------------------------------

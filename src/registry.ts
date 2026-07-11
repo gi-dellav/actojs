@@ -154,13 +154,13 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
         if (type === 'keys') {
           const { pid } = payload as { pid: PID };
           const result: string[] = [];
-          for (const part of s.partitions.values()) {
-            for (const [k, entries] of part) {
+          s.partitions.forEach((part) => {
+            part.forEach((entries, k) => {
               if (entries.some(e => e.pid === pid)) {
                 result.push(k);
               }
-            }
-          }
+            });
+          });
           return { reply: result, state: s };
         }
 
@@ -175,11 +175,11 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
 
         if (type === 'count') {
           let total = 0;
-          for (const part of s.partitions.values()) {
-            for (const entries of part.values()) {
+          s.partitions.forEach((part) => {
+            part.forEach((entries) => {
               total += entries.length;
-            }
-          }
+            });
+          });
           return { reply: total, state: s };
         }
 
@@ -217,14 +217,14 @@ export async function start_link(opts: RegistryStartOptions): Promise<{ ok: PID 
 }
 
 function cleanupPid(s: RegistryState, pid: PID): void {
-  for (const part of s.partitions.values()) {
-    for (const [key, entries] of part) {
+  s.partitions.forEach((part) => {
+    part.forEach((entries, key) => {
       const before = entries.length;
       const remaining = entries.filter(e => e.pid !== pid);
       if (remaining.length === 0) part.delete(key);
       else if (remaining.length !== before) part.set(key, remaining);
-    }
-  }
+    });
+  });
 }
 
 function notifyListeners(s: RegistryState, event: string, key: string, pid: PID, value: unknown): void {

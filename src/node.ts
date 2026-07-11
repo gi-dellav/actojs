@@ -96,22 +96,22 @@ export function stop(): void | { error: Error } {
     }
     nodeMonitors.delete(nodeName);
   }
-  for (const [_, link] of crossNodeLinks) {
+  crossNodeLinks.forEach((link) => {
     Proc.send(link.localPid, {
       type: 'EXIT',
       from: nodeName,
       reason: 'nodedown',
     });
-  }
+  });
   crossNodeLinks.clear();
-  for (const [_, mon] of crossNodeMonitors) {
+  crossNodeMonitors.forEach((mon) => {
     Proc.send(mon.localPid, {
       type: 'DOWN',
       ref: mon.localRef,
       pid: nodeName,
       reason: 'nodedown',
     });
-  }
+  });
   crossNodeMonitors.clear();
   remoteSpawnRegistry.clear();
   nodeName = null;
@@ -182,7 +182,7 @@ export function list(state?: string | string[]): string[] {
     result.push(nodeName);
   }
   if (states.includes('connected')) {
-    result.push(...connectedNodes);
+    connectedNodes.forEach(n => result.push(n));
   }
   return result;
 }
@@ -219,14 +219,14 @@ export function monitor(node: string, flag: boolean): Ref | void {
 
 /** Stop monitoring a node identified by the given monitor reference. */
 export function demonitor_node(ref: Ref): void {
-  for (const [node, entries] of nodeMonitors) {
+  nodeMonitors.forEach((entries, node) => {
     const idx = entries.findIndex(e => e.ref === ref);
     if (idx !== -1) {
       entries.splice(idx, 1);
       if (entries.length === 0) nodeMonitors.delete(node);
-      break;
+      return;
     }
-  }
+  });
 }
 
 // ---- spawn remote ---------------------------------------------------------

@@ -142,10 +142,9 @@ async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnSt
         if (type === 'stop') {
           s.isShuttingDown = true;
           const { reason } = payload as { reason?: unknown };
-          for (const [pid, _] of s.children) {
+          s.children.forEach((_, pid) => {
             Proc.exit(pid, reason ?? 'shutdown');
-          }
-          s.children.clear();
+          });          s.children.clear();
           return { reply: undefined, state: s };
         }
 
@@ -165,10 +164,9 @@ async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnSt
           // Check restart rate
           if (!checkRestartRate(s)) {
             s.isShuttingDown = true;
-            for (const [pid, _] of s.children) {
+            s.children.forEach((_, pid) => {
               Proc.exit(pid, 'shutdown');
-            }
-            s.children.clear();
+            });            s.children.clear();
             return { noreply: undefined, state: s };
           }
 
@@ -188,10 +186,9 @@ async function startDynamicSupervisor(opts: SupervisorInitOptions): Promise<OnSt
       },
 
       async terminate(reason: unknown, s: DynamicSupervisorState): Promise<void> {
-        for (const [pid, _] of s.children) {
+        s.children.forEach((_, pid) => {
           try { Proc.exit(pid, reason ?? 'shutdown'); } catch (_) {}
-        }
-      },
+        });      },
     },
     null,
     { name: opts.name, link: true },
@@ -271,9 +268,9 @@ function startChildSpec(spec: ChildSpec): OnStartChild | Promise<OnStartChild> {
 
 function countChildren(s: DynamicSupervisorState): Counts {
   let active = 0;
-  for (const [pid, _] of s.children) {
+  s.children.forEach((_, pid) => {
     if (Proc.alive(pid)) active++;
-  }
+  });
   return {
     specs: s.children.size,
     active,
@@ -284,7 +281,7 @@ function countChildren(s: DynamicSupervisorState): Counts {
 
 function whichChildren(s: DynamicSupervisorState): ChildInfo[] {
   const result: ChildInfo[] = [];
-  for (const [pid, _] of s.children) {
+  s.children.forEach((_, pid) => {
     if (Proc.alive(pid)) {
       result.push({
         id: undefined,
@@ -293,7 +290,7 @@ function whichChildren(s: DynamicSupervisorState): ChildInfo[] {
         modules: [],
       });
     }
-  }
+  });
   return result;
 }
 

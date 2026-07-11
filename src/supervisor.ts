@@ -64,7 +64,7 @@ export async function start_link(
   } else {
     const mod = childrenOrModule;
     const initArg = initArgOrOpts;
-    opts = (maybeOpts as SupervisorStartOptions) ?? {};
+    opts = (maybeOpts as SupervisorStartOptions) ?? { strategy: 'one_for_one' };
     if (typeof mod.init === 'function') {
       const spec: SupervisorSpec = mod.init(initArg);
       children = spec.children;
@@ -109,10 +109,9 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
           const normalized = normalizeSpec(spec);
           const childResult = await startChildSpec(normalized);
           if ('error' in childResult) {
-            for (const [id, cs] of started) {
+            started.forEach((cs, id) => {
               Proc.exit(cs.pid, 'shutdown');
-            }
-            return { error: childResult.error };
+            });            return { error: childResult.error };
           }
           const pid = (childResult as { ok: PID }).ok;
           Proc.monitor(pid, supPid);
@@ -122,9 +121,9 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
 
         initState.children = started;
         initState.childOrder = order;
-        for (const [id, cs] of started) {
+        started.forEach((cs, id) => {
           initState.specs.set(id, cs.spec);
-        }
+        });
         return { ok: initState };
       },
 
@@ -232,12 +231,12 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
           const { pid: downPid, reason } = msg as DownMessage;
           if (reason === 'normal' || reason === 'shutdown' || reason === 'killed') {
             let exitedId: string | null = null;
-            for (const [id, child] of s.children) {
+            s.children.forEach((child, id) => {
               if (child.pid === downPid) {
                 exitedId = id;
-                break;
+                return;
               }
-            }
+            });
             if (exitedId) {
               s.children.delete(exitedId);
               s.childOrder = s.childOrder.filter(id => id !== exitedId);
@@ -246,12 +245,12 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
           }
 
           let failedId: string | null = null;
-          for (const [id, child] of s.children) {
+          s.children.forEach((child, id) => {
             if (child.pid === downPid) {
               failedId = id;
-              break;
+              return;
             }
-          }
+          });
           if (!failedId) return { noreply: undefined, state: s };
 
           const failedSpec = s.children.get(failedId)?.spec;
@@ -279,9 +278,9 @@ async function startSupervisor(children: ChildSpec[], opts: SupervisorStartOptio
       },
 
       async terminate(reason: unknown, s: SupervisorState): Promise<void> {
-        for (const [_, child] of s.children) {
+        s.children.forEach((child) => {
           try { Proc.exit(child.pid, reason ?? 'shutdown'); } catch (_) {}
-        }
+        });
       },
     },
     null,
@@ -393,21 +392,21 @@ function countChildren(s: SupervisorState): Counts {
   let supervisors = 0;
   let workers = 0;
 
-  for (const [_, child] of s.children) {
+  s.children.forEach((child) => {
     specs++;
     if (Proc.alive(child.pid)) {
       active++;
       if (child.spec.type === 'supervisor') supervisors++;
       else workers++;
     }
-  }
+  });
 
   return { specs, active, supervisors, workers };
 }
 
 function whichChildren(s: SupervisorState): ChildInfo[] {
   const result: ChildInfo[] = [];
-  for (const [id, child] of s.children) {
+  s.children.forEach((child, id) => {
     if (Proc.alive(child.pid)) {
       result.push({
         id,
@@ -416,7 +415,7 @@ function whichChildren(s: SupervisorState): ChildInfo[] {
         modules: [child.spec.start[0]],
       });
     }
-  }
+  });
   return result;
 }
 
@@ -437,9 +436,9 @@ async function applyRestartStrategy(s: SupervisorState, failedId: string, failed
   // Check significant flag
   if (failedSpec.significant) {
     s.isShuttingDown = true;
-    for (const [_, child] of s.children) {
+    s.children.forEach((child) => {
       Proc.exit(child.pid, 'shutdown');
-    }
+    });
     Proc.exit(supPid, 'shutdown');
     return;
   }
@@ -457,9 +456,9 @@ async function applyRestartStrategy(s: SupervisorState, failedId: string, failed
     case 'one_for_all': {
       const oldPids = new Map<string, PID>();
       const allIds: string[] = [];
-      for (const id of s.specs.keys()) {
+      s.specs.forEach((_, id) => {
         allIds.push(id);
-      }
+      });
       for (const id of allIds) {
         const child = s.children.get(id);
         if (child) {
@@ -486,13 +485,13 @@ async function applyRestartStrategy(s: SupervisorState, failedId: string, failed
       const oldPids = new Map<string, PID>();
       const afterIds: string[] = [];
       let foundFailed = false;
-      for (const id of s.specs.keys()) {
+      s.specs.forEach((_, id) => {
         if (!foundFailed) {
           if (id === failedId) foundFailed = true;
-          continue;
+          return;
         }
         afterIds.push(id);
-      }
+      });
 
       // Restart failed child first
       const oldFailedPid = s.children.get(failedId)?.pid;
@@ -549,22 +548,22 @@ function sendRestartNotification(supPid: PID, childId: string, oldPid: PID, newP
   const sys = ActorSystem.current;
   const sup = sys.getProcess(supPid);
   if (sup) {
-    for (const linkedPid of sup.links) {
+    sup.links.forEach((linkedPid) => {
       sys.deliverMessage(linkedPid, {
         type: 'RESTARTED',
         childId,
         oldPid,
         newPid,
       });
-    }
-    for (const monitorPid of sup.monitoredBy.keys()) {
+    });
+    sup.monitoredBy.forEach((_, monitorPid) => {
       sys.deliverMessage(monitorPid, {
         type: 'RESTARTED',
         childId,
         oldPid,
         newPid,
       });
-    }
+    });
   }
 }
 
