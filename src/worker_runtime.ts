@@ -9,6 +9,7 @@
 
 import type { PID, Ref, Dest, SpawnOpt, SpawnOptions, ProcessInfo } from './types';
 import { ActorSystem, type ProcessState } from './system';
+import type { Runtime } from './core';
 
 // ---- Environment detection ------------------------------------------------
 
@@ -158,7 +159,7 @@ function createWorker(): Worker {
 
 // ---- WorkerRuntime class --------------------------------------------------
 
-export class WorkerRuntime {
+export class WorkerRuntime implements Runtime {
   readonly name: string;
   readonly available: boolean;
 
