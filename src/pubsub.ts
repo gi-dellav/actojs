@@ -8,6 +8,7 @@ import * as Proc from "./process";
 
 // ---- message tags ---------------------------------------------------------
 
+/** Tagged message delivered to pub/sub subscribers, with topic and payload. */
 export interface PubSubMessage {
   __pubsub__: true;
   topic: string;
@@ -184,6 +185,7 @@ const callbacks: GS.GenServerCallbacks<PubSubState> = {
 
 // ---- public API -----------------------------------------------------------
 
+/** Options for starting a PubSub instance (optional registered name). */
 export interface PubSubOptions {
   name?: string;
 }

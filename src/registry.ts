@@ -12,6 +12,7 @@ import type { From } from "./system";
 import * as Proc from "./process";
 import * as GS from "./gen_server";
 
+/** Callback invoked when a key is registered, updated, or unregistered. */
 export type RegistryCallback = (pid: PID, value: unknown) => void;
 
 interface RegistryEntry {

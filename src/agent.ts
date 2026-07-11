@@ -5,7 +5,9 @@ import type { PID, OnStart, MFA, Module } from "./types";
 import type { From } from "./system";
 import * as GS from "./gen_server";
 
+/** Function that transforms or reads an agent's state. */
 export type AgentFn<S, R = unknown> = (state: S) => R;
+/** Agent function or MFA tuple accepted by get/update/get_and_update/cast. */
 export type AgentArg<S, R = unknown> = AgentFn<S, R> | MFA;
 
 // ---- resolve agent PID ----------------------------------------------------

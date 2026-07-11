@@ -43,8 +43,7 @@ export function getRuntime(): Runtime {
   return currentRuntime;
 }
 
-// Whether process.memoryUsage() is available (Node, Bun, Deno).
-// False in browsers where process is undefined.
+/** Whether process.memoryUsage() is available (Node, Bun, Deno). False in browsers. */
 export function hasMemoryAPI(): boolean {
   return AS.hasMemoryAPI;
 }

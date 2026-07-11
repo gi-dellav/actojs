@@ -7,6 +7,7 @@ export type PID = string;
 export type Ref = symbol;
 /** Destination for sending messages — either a raw PID or a registered name. */
 export type Dest = PID | string;
+/** Spawn option: link or monitor the spawned process to the caller. */
 export type SpawnOpt = "link" | "monitor";
 
 /**
@@ -50,8 +51,10 @@ export interface SpawnOptions {
  * Used by MFA tuples to dispatch function calls by name at runtime.
  */
 export type Module = Record<string, unknown>;
-export type MFA = [Module, string, unknown[]]; // [module, functionName, args]
+/** Module-Function-Arguments tuple for dynamic dispatch at spawn time. */
+export type MFA = [Module, string, unknown[]];
 
+/** Message delivered to monitors when a monitored process exits. */
 export interface DownMessage {
   type: "DOWN";
   ref: Ref;
@@ -59,6 +62,7 @@ export interface DownMessage {
   reason: unknown;
 }
 
+/** Snapshot of a process's public state for introspection and debugging. */
 export interface ProcessInfo {
   status: "running" | "alive" | "exiting" | "exited";
   messageQueueLength: number;
@@ -75,7 +79,9 @@ export interface ProcessInfo {
   registeredName: string | null;
 }
 
+/** Result returned by start/start_link: either an ok PID or an error. */
 export type OnStart = { ok: PID } | { error: Error };
+/** Result returned by start_child: either an ok PID or an error. */
 export type OnStartChild = { ok: PID } | { error: Error };
 
 /**
@@ -86,6 +92,7 @@ export type OnStartChild = { ok: PID } | { error: Error };
  */
 export type Strategy = "one_for_one" | "one_for_all" | "rest_for_one";
 
+/** Specification for a static child managed by a supervisor. */
 export interface ChildSpec {
   id: string;
   start: MFA; // [module, functionName, args]
@@ -95,6 +102,7 @@ export interface ChildSpec {
   significant?: boolean;
 }
 
+/** Runtime information about a running child process. */
 export interface ChildInfo {
   id: string | undefined;
   pid: PID;
@@ -102,6 +110,7 @@ export interface ChildInfo {
   modules: Module[];
 }
 
+/** Aggregate counts of supervisor children by category. */
 export interface Counts {
   specs: number;
   active: number;
@@ -109,14 +118,17 @@ export interface Counts {
   workers: number;
 }
 
+/** Handle for awaiting or yielding a task's result. */
 export interface TaskHandle<R> {
   pid: PID;
   ref: Ref;
 }
 
+/** Key registration mode for the process registry. */
 export type RegistryKeyMode =
   "unique" | "duplicate" | { duplicate: "key" } | { duplicate: "pid" };
 
+/** Options for starting a process registry. */
 export interface RegistryStartOptions {
   keys: RegistryKeyMode;
   name?: string;
@@ -125,6 +137,7 @@ export interface RegistryStartOptions {
   meta?: Record<string, unknown>;
 }
 
+/** Options for starting a supervisor (strategy, restart limits, name). */
 export interface SupervisorStartOptions {
   strategy: Strategy;
   name?: string;
@@ -132,11 +145,13 @@ export interface SupervisorStartOptions {
   max_seconds?: number;
 }
 
+/** Extended supervisor options for module-based init (max_children, extra_arguments). */
 export interface SupervisorInitOptions extends SupervisorStartOptions {
   max_children?: number;
   extra_arguments?: unknown[];
 }
 
+/** Complete supervisor specification returned by a module's init callback. */
 export interface SupervisorSpec {
   children: ChildSpec[];
   strategy: Strategy;
@@ -146,6 +161,7 @@ export interface SupervisorSpec {
   extra_arguments: unknown[];
 }
 
+/** Options for starting a distributed node. */
 export interface NodeStartOpts {
   name_domain?: "shortnames" | "longnames";
 }

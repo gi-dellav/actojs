@@ -17,6 +17,7 @@ import type { From } from "./system";
 import * as Proc from "./process";
 import * as GS from "./gen_server";
 
+/** Module interface for dynamic supervisor: must expose an init method returning SupervisorSpec. */
 export interface DynamicSupervisorModule {
   init: (arg?: unknown) => SupervisorSpec;
 }

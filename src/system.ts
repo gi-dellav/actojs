@@ -6,6 +6,7 @@ import type { PID, Ref, ProcessInfo } from "./types";
 export * as Mailbox from "./mailbox";
 export * as Types from "./types";
 
+/** Error thrown when a genCall or receive operation times out. */
 export class TimeoutError extends Error {
   constructor(message = "timeout") {
     super(message);
@@ -13,6 +14,7 @@ export class TimeoutError extends Error {
   }
 }
 
+/** Report emitted when a process exits, passed to onExit handlers. */
 export interface ExitReport {
   pid: PID;
   reason: unknown;
@@ -21,6 +23,7 @@ export interface ExitReport {
   links: PID[];
 }
 
+/** Callback invoked whenever any process in the system exits. */
 export type OnExitHandler = (report: ExitReport) => void;
 
 // ---- ProcessState (moved from mailbox.ts) --------------------------------
@@ -70,12 +73,14 @@ export interface PendingCall {
   timer?: ReturnType<typeof setTimeout>;
 }
 
+/** Result state of an awaited task (pending, done, or error). */
 export interface TaskResult {
   status: "pending" | "done" | "error";
   value?: unknown;
   error?: unknown;
 }
 
+/** Caller identity tuple used by genCall to route replies. */
 export interface From {
   pid: PID | null;
   ref: Ref;
