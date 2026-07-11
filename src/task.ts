@@ -1,7 +1,7 @@
 // acto/task — Fire-and-forget computation that can be awaited.
 // Web runtime: cooperative event-loop.
 
-import type { PID, Ref, TaskHandle } from './types';
+import type { PID, Ref, TaskHandle, OnStart } from './types';
 import { ActorSystem, TimeoutError } from './system';
 import * as Proc from './process';
 
@@ -79,4 +79,30 @@ export async function shutdown(task: TaskHandle<unknown>): Promise<void> {
     Proc.exit(task.pid, 'shutdown');
   }
   ActorSystem.current.taskResults.delete(task.ref);
+}
+
+/** Start a fire-and-forget task without linking to the caller.
+ *  The task runs independently; use Task.await_ if you need the result. */
+export function start(fn: () => void | Promise<void>): OnStart {
+  const pid = Proc.spawn(async () => { await fn(); });
+  return { ok: pid };
+}
+
+/** Start a fire-and-forget task linked to the caller.
+ *  If the caller exits abnormally, the task is killed. */
+export function start_link(fn: () => void | Promise<void>): OnStart {
+  const pid = Proc.spawn_link(async () => { await fn(); });
+  return { ok: pid };
+}
+
+/** Await all tasks concurrently. Results are returned in the same order as input.
+ *  Rejects immediately if any task fails. */
+export function await_many<R>(tasks: TaskHandle<R>[], timeout?: number): Promise<R[]> {
+  return Promise.all(tasks.map(t => await_<R>(t, timeout)));
+}
+
+/** Non-blocking poll of multiple tasks. Returns an array with the result (or null
+ *  for each task that is still pending or errored). */
+export function yield_many<R>(tasks: TaskHandle<R>[]): Promise<(R | null)[]> {
+  return Promise.all(tasks.map(t => yield_<R>(t)));
 }

@@ -27,16 +27,32 @@ interface GenStopMsg {
   __stop_ref?: Ref;
 }
 
+interface GenContinueMsg {
+  __gen_server__: 'continue';
+  payload: unknown;
+}
+
+/** Return type for handle_call. */
+export type HandleCallResult<S> =
+  | { reply: unknown; state: S; continue?: unknown }
+  | { noreply: unknown; state: S; continue?: unknown };
+
+/** Return type for handle_cast / handle_info / handle_continue. */
+export type HandleInfoResult<S> =
+  | { noreply: unknown; state: S; continue?: unknown };
+
 /** Callbacks implementing the GenServer behaviour. */
 export interface GenServerCallbacks<S> {
-  /** Initialise the server. Receives the init argument, returns the initial state or { ok: state } or { error: reason }. */
-  init(args: unknown): S | { ok: S } | { error: unknown; reason?: unknown } | Promise<S | { ok: S } | { error: unknown; reason?: unknown }>;
-  /** Handle a synchronous call. Must return { reply, state } or { noreply, state } for deferred replies via reply(). */
-  handle_call?(msg: unknown, from: From, state: S, myPid: PID): { reply: unknown; state: S } | { noreply: unknown; state: S } | Promise<{ reply: unknown; state: S } | { noreply: unknown; state: S }>;
-  /** Handle an asynchronous cast. No reply is sent to the caller. */
-  handle_cast?(msg: unknown, state: S, myPid: PID): { noreply: unknown; state: S } | Promise<{ noreply: unknown; state: S }>;
-  /** Handle all other messages sent to the process (e.g. DOWN, EXIT, user messages). */
-  handle_info?(msg: unknown, state: S, myPid: PID): { noreply: unknown; state: S } | Promise<{ noreply: unknown; state: S }>;
+  /** Initialise the server. Receives the init argument, returns the initial state or { ok: state } or { error: reason }. May include a continue payload to be dispatched via handle_continue after init. */
+  init(args: unknown): S | { ok: S; continue?: unknown } | { error: unknown; reason?: unknown } | Promise<S | { ok: S; continue?: unknown } | { error: unknown; reason?: unknown }>;
+  /** Handle a synchronous call. Must return { reply, state } or { noreply, state } for deferred replies via reply(). May include a continue payload. */
+  handle_call?(msg: unknown, from: From, state: S, myPid: PID): HandleCallResult<S> | Promise<HandleCallResult<S>>;
+  /** Handle an asynchronous cast. No reply is sent to the caller. May include a continue payload. */
+  handle_cast?(msg: unknown, state: S, myPid: PID): HandleInfoResult<S> | Promise<HandleInfoResult<S>>;
+  /** Handle all other messages sent to the process (e.g. DOWN, EXIT, user messages). May include a continue payload. */
+  handle_info?(msg: unknown, state: S, myPid: PID): HandleInfoResult<S> | Promise<HandleInfoResult<S>>;
+  /** Handle a continue message sent by the server to itself. Used for post-init work or splitting long-running work. */
+  handle_continue?(msg: unknown, state: S, myPid: PID): HandleInfoResult<S> | Promise<HandleInfoResult<S>>;
   /** Cleanup invoked before the process exits. Return value is ignored. */
   terminate?(reason: unknown, state: S): void | Promise<void>;
 }
@@ -94,10 +110,12 @@ async function _startGenServer<S>(
     }
 
     let state: S;
+    let initContinue: unknown | undefined;
     try {
       const result = await callbacks.init(initArg);
       if (typeof result === 'object' && result !== null && 'ok' in result) {
         state = (result as { ok: S }).ok;
+        if ('continue' in result) initContinue = (result as { continue: unknown }).continue;
       } else if (typeof result === 'object' && result !== null && 'error' in result) {
         Proc.exit(me, (result as { error: unknown }).error);
         initFailed(new Error('init returned error'));
@@ -114,6 +132,10 @@ async function _startGenServer<S>(
     initDone();
 
     const sys = ActorSystem.current;
+
+    if (initContinue !== undefined && callbacks.handle_continue) {
+      Proc.send(me, { __gen_server__: 'continue', payload: initContinue });
+    }
 
     const loop = async () => {
       while (Proc.alive(me)) {
@@ -143,6 +165,9 @@ async function _startGenServer<S>(
               state = result.state;
               if ('reply' in result) {
                 resolvePending(ref, { ok: result.reply });
+              }
+              if ('continue' in result && result.continue !== undefined) {
+                Proc.send(me, { __gen_server__: 'continue', payload: result.continue });
               }
             } catch (err) {
               if (err instanceof TimeoutError && err.message === 'execution timeout') {
@@ -177,7 +202,12 @@ async function _startGenServer<S>(
                     ),
                   ])
                 : await handler;
-              if (result) state = result.state;
+              if (result) {
+                state = result.state;
+                if (result.continue !== undefined) {
+                  Proc.send(me, { __gen_server__: 'continue', payload: result.continue });
+                }
+              }
             } catch (err) {
               if (err instanceof TimeoutError && err.message === 'execution timeout') {
                 const proc = sys.getProcess(me);
@@ -193,6 +223,17 @@ async function _startGenServer<S>(
                 }
               }
             }
+          } else if (tagged.__gen_server__ === 'continue' && callbacks.handle_continue) {
+            const { payload } = msg as GenContinueMsg;
+            try {
+              const result = await callbacks.handle_continue(payload, state, me);
+              if (result) {
+                state = result.state;
+                if (result.continue !== undefined) {
+                  Proc.send(me, { __gen_server__: 'continue', payload: result.continue });
+                }
+              }
+            } catch (_) {}
           } else if (tagged.__gen_server__ === 'stop') {
             const { reason, __stop_ref } = msg as GenStopMsg;
             Proc.put('__terminate_info__', { reason, exitType: 'stop' } satisfies TerminateInfo);
@@ -208,13 +249,23 @@ async function _startGenServer<S>(
           } else if (callbacks.handle_info) {
             try {
               const result = await callbacks.handle_info(msg, state, me);
-              if (result) state = result.state;
+              if (result) {
+                state = result.state;
+                if (result.continue !== undefined) {
+                  Proc.send(me, { __gen_server__: 'continue', payload: result.continue });
+                }
+              }
             } catch (_) {}
           }
         } else if (callbacks.handle_info) {
           try {
             const result = await callbacks.handle_info(msg, state, me);
-            if (result) state = result.state;
+            if (result) {
+              state = result.state;
+              if (result.continue !== undefined) {
+                Proc.send(me, { __gen_server__: 'continue', payload: result.continue });
+              }
+            }
           } catch (_) {}
         }
 

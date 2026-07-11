@@ -405,4 +405,153 @@ describe('GenServer', () => {
       expect(Process.alive(result.ok)).toBe(false);
     });
   });
+
+  describe('handle_continue', () => {
+    test('init returns { ok, continue } dispatches to handle_continue', async () => {
+      const steps: string[] = [];
+      const result = await GS.start<{ steps: string[] }>({
+        init() {
+          return { ok: { steps }, continue: 'init_work' };
+        },
+        handle_continue(msg: unknown, state: { steps: string[] }) {
+          state.steps.push(`continue:${msg}`);
+          return { noreply: undefined, state };
+        },
+        handle_call(msg: unknown, _from: any, state: { steps: string[] }) {
+          if (msg === 'get') return { reply: state.steps, state };
+          return { reply: undefined, state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      await sleep(20);
+      const stepsOut = await GS.call(result.ok, 'get');
+      expect(stepsOut).toEqual(['continue:init_work']);
+    });
+
+    test('handle_call can return continue', async () => {
+      const result = await GS.start<{ values: string[] }>({
+        init() { return { values: [] }; },
+        handle_call(msg: unknown, _from: any, state: { values: string[] }) {
+          if (msg === 'trigger') {
+            return { reply: 'ok', state, continue: 'post_call' };
+          }
+          if (msg === 'get') return { reply: state.values, state };
+          return { reply: undefined, state };
+        },
+        handle_continue(msg: unknown, state: { values: string[] }) {
+          state.values.push(String(msg));
+          return { noreply: undefined, state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      await GS.call(result.ok, 'trigger');
+      await sleep(10);
+      const vals = await GS.call(result.ok, 'get');
+      expect(vals).toEqual(['post_call']);
+    });
+
+    test('handle_cast can return continue', async () => {
+      const result = await GS.start<{ values: string[] }>({
+        init() { return { values: [] }; },
+        handle_cast(msg: unknown, state: { values: string[] }) {
+          if (msg === 'work') {
+            return { noreply: undefined, state, continue: 'async_work' };
+          }
+          return { noreply: undefined, state };
+        },
+        handle_continue(msg: unknown, state: { values: string[] }) {
+          state.values.push(String(msg));
+          return { noreply: undefined, state };
+        },
+        handle_call(msg: unknown, _from: any, state: { values: string[] }) {
+          if (msg === 'get') return { reply: state.values, state };
+          return { reply: undefined, state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      GS.cast(result.ok, 'work');
+      await sleep(20);
+      const vals = await GS.call(result.ok, 'get');
+      expect(vals).toEqual(['async_work']);
+    });
+
+    test('handle_info can return continue', async () => {
+      const result = await GS.start<{ values: string[] }>({
+        init() { return { values: [] }; },
+        handle_info(msg: unknown, state: { values: string[] }) {
+          if (msg && typeof msg === 'object' && (msg as any).type === 'info') {
+            return { noreply: undefined, state, continue: 'info_work' };
+          }
+          return { noreply: undefined, state };
+        },
+        handle_continue(msg: unknown, state: { values: string[] }) {
+          state.values.push(String(msg));
+          return { noreply: undefined, state };
+        },
+        handle_call(msg: unknown, _from: any, state: { values: string[] }) {
+          if (msg === 'get') return { reply: state.values, state };
+          return { reply: undefined, state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      Process.send(result.ok, { type: 'info' });
+      await sleep(20);
+      const vals = await GS.call(result.ok, 'get');
+      expect(vals).toEqual(['info_work']);
+    });
+
+    test('handle_continue can chain by returning continue', async () => {
+      const result = await GS.start<{ count: number }>({
+        init() {
+          return { ok: { count: 0 }, continue: 'first' };
+        },
+        handle_continue(msg: unknown, state: { count: number }) {
+          state.count++;
+          if (state.count < 3) {
+            return { noreply: undefined, state, continue: `chain-${state.count}` };
+          }
+          return { noreply: undefined, state };
+        },
+        handle_call(_msg: unknown, _from: any, state: { count: number }) {
+          return { reply: state.count, state };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      await sleep(20);
+      const count = await GS.call(result.ok, 'ping');
+      expect(count).toBe(3);
+    });
+
+    test('handle_continue is ignored if not implemented', async () => {
+      const result = await GS.start({
+        init() {
+          return { ok: {}, continue: 'ignored' };
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      await sleep(10);
+      expect(Process.alive(result.ok)).toBe(true);
+    });
+
+    test('handle_continue errors are swallowed', async () => {
+      const result = await GS.start({
+        init() {
+          return { ok: {}, continue: 'bang' };
+        },
+        handle_continue() {
+          throw new Error('continue error');
+        },
+      }, null);
+      if ('error' in result) throw result.error;
+
+      await sleep(20);
+      expect(Process.alive(result.ok)).toBe(true);
+    });
+  });
 });

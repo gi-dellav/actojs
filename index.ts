@@ -7,6 +7,7 @@ export * as Task from './src/task';
 export * as Registry from './src/registry';
 export * as Supervisor from './src/supervisor';
 export * as DynamicSupervisor from './src/dynamic_supervisor';
+export * as TaskSupervisor from './src/task_supervisor';
 export * as Node from './src/node';
 export * as Core from './src/core';
 
