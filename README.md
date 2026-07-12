@@ -17,7 +17,6 @@ console.log(value); // 1
 The actor model eliminates entire categories of concurrency bugs. Each actor is a sequential island of state with no shared memory, no locks and no data races.
 
 Actors communicate only through asynchronous message passing, which means:
-https://elixir-lang.org/blog/2020/09/24/paas-with-elixir-at-Heroku/
 - **No deadlocks** from lock ordering
 - **No race conditions** on shared mutable state
 - **Fault isolation**, as one actor crashing can't corrupt another
