@@ -62,6 +62,19 @@ Here are some interesting articles on the usage of the actor model in production
 
 **Supervisor** — "let it crash" error recovery. Define child specs, choose a strategy. Restart rate limiting prevents infinite loops (default: 3 restarts / 5 seconds).
 
+## Install
+
+### Via Bun
+
+```sh
+bun add actojs typescript
+```
+
+### Via NPM
+
+```sh
+npm install actojs
+```
 
 ## Modules
 
@@ -172,23 +185,6 @@ Process.register("logger", Process.self());
 const { ok: reg } = await Registry.start({ keys: "unique" });
 await Registry.register(reg, "worker1", Process.self(), { role: "cache" });
 const entries = await Registry.lookup(reg, "worker1");
-```
-
-## Requirements
-
-- **Bun** (test runner, runtime), Deno or Node.js 18+
-- TypeScript 5 (peer)
-
-## Install
-
-```sh
-bun add actojs typescript
-```
-
-## Run tests
-
-```sh
-bun test
 ```
 
 ## License
