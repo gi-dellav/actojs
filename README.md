@@ -58,7 +58,7 @@ Here are some interesting articles on the usage of the actor model in production
 
 **Task** — run an async computation in a process, `await_` or `yield_` its result. Tasks support timeouts and concurrent awaiters.
 
-**Limits** — [todo]
+**Limits** — per-process caps on message budget, mailbox size, execution time, and memory (RSS); supervisor restart-rate throttling; per-call timeouts on receive, genCall, and task await.
 
 **Supervisor** — "let it crash" error recovery. Define child specs, choose a strategy. Restart rate limiting prevents infinite loops (default: 3 restarts / 5 seconds).
 
